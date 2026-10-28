@@ -302,6 +302,44 @@ function lbPick(box,cand,isSeen){
   return {card:(done[0]||cand[0]),kind:"early"};
 }
 
+/* ---------- Mastery, in each method's own terms ----------
+   Each card gets a category (the method's own stages) and a score from 0 to 1; a set's percent is the average score,
+   with words not yet seen counting as 0. Everything is worked out from the review log, so it is the same whichever
+   scheduler you studied with. */
+var RECALL_CATS=[["Under 50% recall","c1"],["50–70%","c2"],["70–90%","c4"],["90%+ recall","c5"]];
+function recallCat(p){ return p<0.5?0:p<0.7?1:p<0.9?2:3; }
+var MASTERY={
+  recall:{cats:RECALL_CATS,how:"Mastery is each word’s predicted chance of recall right now, averaged over the words you picked (words not yet seen count as 0%)."},
+  sm2:{cats:[["Repeat today","c1"],["1-day interval","c2"],["6-day interval","c3"],["7–20 days","c4"],["3 weeks+","c5"]],
+    how:"Mastery follows each word’s SM-2 interval up to three weeks, the point Woźniak treated an item’s easiness as settled: 1 day is 5%, 6 days 29%, 3 weeks or more 100%. Words not yet seen count as 0%."},
+  "anki-sm2":{cats:[["Learning","c1"],["Relearning","c2"],["Young (under 21 days)","c4"],["Mature (21 days+)","c5"]],
+    how:"Mastery uses Anki’s card types. A mature card (interval of 21 days or more) is 100%, a young card counts its interval out of 21 days, and learning and relearning cards count as 0%, as do words not yet seen."},
+  leitner:{cats:[["Compartment 1","c1"],["Compartment 2","c2"],["Compartment 3","c3"],["Compartment 4","c4"],["Compartment 5","c5"],["Learned","c6"]],
+    how:"Mastery is how far each word has got through Leitner’s box: compartment 1 is 0%, each later compartment adds 20%, and a word that passes compartment 5 is learned (100%). Words not yet seen count as 0%."},
+  pimsleur:{cats:[["Seconds (recalls 1–2)","c1"],["Minutes (3–4)","c2"],["Hours (5–6)","c3"],["Days (7–8)","c4"],["Weeks to months (9+)","c5"]],
+    how:"Mastery is how far each word is through Pimsleur’s schedule, out of the 10 recalls he says should hold a word for well over a year. Words not yet seen count as 0%."}
+};
+function masteryOf(method,log,id,now){ // -> {cat, score} for a seen card
+  if(!log.length) return null;
+  var last=log[log.length-1].t, days=Math.max(0,(now-last)/DAY), r;
+  switch(method){
+    case "sm2": { var i=sm2(log).info, red=sm2(log).due<=last&&dayNum(now)===dayNum(last);
+      return {cat:red?0:i.interval<=1?1:i.interval<=6?2:i.interval<21?3:4, score:red?0:Math.min(i.interval,21)/21}; }
+    case "anki-sm2": { var c=ankiSm2(log,id).info;
+      if(c.kind==="learn") return {cat:0,score:0}; if(c.kind==="relearn") return {cat:1,score:0};
+      return {cat:c.ivl>=21?3:2,score:Math.min(c.ivl,21)/21}; }
+    case "leitner": { var b=1; log.forEach(function(e){ b=PASS(e.r)?Math.min(b+1,6):1; }); return {cat:b-1,score:(b-1)/5}; }
+    case "pimsleur": { var n=log.length; return {cat:n<=2?0:n<=4?1:n<=6?2:n<=8?3:4,score:Math.min(n,10)/10}; }
+    case "ebisu": r=ebisu.predictRecall(ebisuSched(log).info.model,Math.max(days*24,1e-9),true); break;
+    case "fsrs7": r=f7Curve(W7,days,fsrs7(log).info); break;
+    case "leitner-duo": case "pimsleur-duo": r=Math.pow(2,-days/duoSched(log,method==="leitner-duo"?"leitner":"pimsleur").info.halflife); break;
+    case "lstm": case "gru": r=nnCurve(method==="lstm"?lstmOut(log):gruOut(log))(days); break;
+    default: return null;
+  }
+  return {cat:recallCat(r),score:r};
+}
+function masteryKind(method){ return MASTERY[method]?method:"recall"; }
+
 var METHODS={
   "sm2":       {name:"SM-2",               sched:function(log){return sm2(log);}},
   "anki-sm2":  {name:"Anki SM-2",          sched:function(log,id){return ankiSm2(log,id);}},
@@ -314,7 +352,7 @@ var METHODS={
   "lstm":      {name:"LSTM",               sched:function(log){return nnSched(log,"lstm");}},
   "gru":       {name:"GRU",                sched:function(log){return nnSched(log,"gru");}}
 };
-var API={METHODS:METHODS,lbUpdate:lbUpdate,lbPick:lbPick,lbCaps:lbCaps,dayNum:dayNum,
+var API={METHODS:METHODS,MASTERY:MASTERY,masteryOf:masteryOf,masteryKind:masteryKind,recallCat:recallCat,lbUpdate:lbUpdate,lbPick:lbPick,lbCaps:lbCaps,dayNum:dayNum,
   _test:{sm2:sm2,ankiSm2:ankiSm2,ebisuSched:ebisuSched,fsrs7:fsrs7,f7Curve:f7Curve,f7Next:f7Next,f7Init:f7Init,f7Interval:f7Interval,W7:W7,
     duoSched:duoSched,pimsleur:pimsleur,lstmOut:lstmOut,gruOut:gruOut,nnCurve:nnCurve,timeTo90:timeTo90}};
 if(isNode) module.exports=API; else root.SCHED=API;

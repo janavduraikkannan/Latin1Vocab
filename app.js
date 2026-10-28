@@ -30,8 +30,15 @@ function legacy(){return prog.lg[cfg.dir];}
 function ext(){return {log:prog.log[cfg.dir],lb:prog.lb[cfg.dir]};}
 function pool(){return E.ALL.filter(function(c){return cfg.sets.indexOf(c.set.id)>=0;});}
 function seenIn(list){var m=cards();return list.filter(function(c){return m[c.id];}).length;}
-function mastery(list){var m=cards(),t=0;list.forEach(function(c){if(m[c.id])t+=m[c.id].r;});return list.length?Math.round(100*t/(5*list.length)):0;}
-function tally(list){var m=cards(),n=[0,0,0,0,0,0];list.forEach(function(c){n[m[c.id]?m[c.id].r:0]++;});return n;}
+/* Mastery in the chosen scheduler's own terms, rebuilt from the review history (engine.js / schedulers.js). */
+function mOf(list){return E.mastery(cfg.method,cards(),{log:prog.log[cfg.dir],lb:prog.lb[cfg.dir]},list,Date.now());}
+function mastery(list){return mOf(list).pct;}
+function methodName(){return cfg.method==="new"?"Default (FSRS-6)":cfg.method==="legacy"?"Legacy":E.SC.METHODS[cfg.method].name;}
+function segBar(list){ // the method's categories as one stacked bar
+  var m=mOf(list),bar=document.createElement("i");
+  m.cats.forEach(function(c){ if(!c.n) return; var u=document.createElement("u");u.style.width=(100*c.n/list.length)+"%";u.style.background="var(--"+c.color+")";u.title=c.label+": "+c.n;bar.appendChild(u); });
+  return bar;
+}
 function show(id){["home","study","summary"].forEach(function(s){$(s).hidden=s!==id;});window.scrollTo(0,0);}
 
 /* ---------- the shared account (Verba's account key; progress in its own vocab/ document) ---------- */
@@ -152,7 +159,7 @@ function renderHome(){
     b.setAttribute("aria-pressed",cfg.sets.indexOf(s.id)>=0);
     var t=document.createElement("b");t.textContent="Set "+s.quiz+", "+cap(s.side);
     var sp=document.createElement("span");sp.textContent=seenIn(s.cards)+" of "+s.cards.length+" seen · "+mastery(s.cards)+"% mastery";
-    var bar=document.createElement("i"),fill=document.createElement("u");fill.style.width=mastery(s.cards)+"%";bar.appendChild(fill);
+    var bar=segBar(s.cards);
     b.appendChild(t);b.appendChild(sp);b.appendChild(bar);
     b.onclick=function(){var i=cfg.sets.indexOf(s.id);if(i>=0)cfg.sets.splice(i,1);else cfg.sets.push(s.id);saveLocal();renderHome();};
     room.appendChild(b);
@@ -161,7 +168,7 @@ function renderHome(){
   $("count").value=cfg.count;$("warn").hidden=true;
   renderMethods();
   $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring each word back right when you’re about to forget it.";
-  $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery.";
+  $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery with "+methodName()+".";
 }
 $("dirs").onclick=function(e){var b=e.target.closest("button");if(!b)return;cfg.dir=b.dataset.dir;saveLocal();renderHome();};
 document.querySelector(".quick").onclick=function(e){var q=e.target.dataset.q;if(!q)return;
@@ -223,7 +230,7 @@ function renderMethods(){
     M.appendChild(d);
   });
   var box=$("minfo"), m=MINFO.filter(function(x){return x.id===openInfo;})[0];
-  box.hidden=!m; if(m) box.innerHTML="<h3>"+esc(m.title||m.label)+"</h3>"+m.html;
+  box.hidden=!m; if(m) box.innerHTML="<h3>"+esc(m.title||m.label)+"</h3>"+m.html+"<p><b>Mastery.</b> "+esc(E.masteryInfo(m.id).how)+"</p>";
 }
 $("methods").onclick=function(e){
   var b=e.target.closest(".mbtn"),i=e.target.closest(".ibtn");
@@ -293,17 +300,20 @@ function finish(){
   show("summary");$("repeat").focus();
 }
 function donut(list,size,label){
-  var n=tally(list),tot=list.length,stops=[],acc=0;
-  [1,2,3,4,5,0].forEach(function(i){if(!n[i])return;var a=acc/tot*100;acc+=n[i];stops.push((i?"var(--c"+i+")":"var(--unseen)")+" "+a+"% "+(acc/tot*100)+"%");});
+  var m=mOf(list),tot=list.length,stops=[],acc=0;
+  m.cats.map(function(c){return [c.n,"var(--"+c.color+")"];}).concat([[m.unseen,"var(--unseen)"]]).forEach(function(p){
+    if(!p[0])return;var a0=acc/tot*100;acc+=p[0];stops.push(p[1]+" "+a0+"% "+(acc/tot*100)+"%");});
   var d=document.createElement("div");d.className="donut "+size;d.style.background="conic-gradient("+stops.join(",")+")";
-  d.setAttribute("role","img");d.setAttribute("aria-label",mastery(list)+"% mastery");
-  d.innerHTML="<div><div><b>"+mastery(list)+"%</b>"+(label?"<span>"+label+"</span>":"")+"</div></div>";
+  d.setAttribute("role","img");d.setAttribute("aria-label",m.pct+"% mastery: "+m.cats.map(function(c){return c.label+" "+c.n;}).join(", ")+", not seen "+m.unseen);
+  d.innerHTML="<div><div><b>"+m.pct+"%</b>"+(label?"<span>"+label+"</span>":"")+"</div></div>";
   return d;
 }
 function renderMastery(){
   var T=$("mtotal");T.textContent="";T.appendChild(donut(sess.pool,"big","mastery"));
-  var n=tally(sess.pool),L=$("mlegend");L.textContent="";
-  [1,2,3,4,5,0].forEach(function(i){var li=document.createElement("li"),sw=document.createElement("i");sw.className=i?"r"+i:"grey";li.appendChild(sw);li.appendChild(document.createTextNode((i?i:"Unseen")+": "+n[i]));L.appendChild(li);});
+  var m=mOf(sess.pool),L=$("mlegend");L.textContent="";
+  m.cats.map(function(c){return [c.label,c.n,"var(--"+c.color+")"];}).concat([["Not seen",m.unseen,"var(--unseen)"]]).forEach(function(p){
+    var li=document.createElement("li"),sw=document.createElement("i");sw.style.background=p[2];li.appendChild(sw);li.appendChild(document.createTextNode(p[0]+": "+p[1]));L.appendChild(li);});
+  $("mmethod").textContent=methodName();$("mhow").textContent=m.how;
   var S=$("msubs");S.textContent="";
   E.SETS.forEach(function(s){if(cfg.sets.indexOf(s.id)<0)return;
     var f=document.createElement("figure"),c=document.createElement("figcaption"),sm=document.createElement("small");

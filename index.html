@@ -24,7 +24,7 @@ document.documentElement.setAttribute("data-theme",t);})();
   --accent:#A9442A; --accent-ink:#FFF6E8; --accent-shadow:#6E2A18; --accent2:#2E5E66; --accent2-ink:#FFFFFF; --brand:#2E5E66;
   --ok:#4A7A35; --bad:#A93226; --gold:#946A10; --wash:#E4D7BC;
   --door:#8E5A2B; --window:#2E5E66;
-  --c1:#A93226; --c2:#C0662B; --c3:#B08A16; --c4:#6E8E2F; --c5:#3F7A3A; --rate-ink:#FFF6E8; --unseen:#D5C7A8;
+  --c1:#A93226; --c2:#C0662B; --c3:#B08A16; --c4:#6E8E2F; --c5:#3F7A3A; --c6:#2E5E66; --rate-ink:#FFF6E8; --unseen:#D5C7A8;
   --shadow:3px 3px 0 var(--line2); --paper:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .2 0 0 0 0 .15 0 0 0 0 .1 0 0 0 .13 0'/%3E%3C/filter%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.018' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .1 0 0 0 .10 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3Crect width='240' height='240' filter='url(%23f)'/%3E%3C/svg%3E");
   --ease-3:cubic-bezier(.25,0,.3,1); --ease-out-5:cubic-bezier(0,0,0,1);
   --ease-elastic-3:cubic-bezier(.5,1.25,.75,1.25); --ease-elastic-4:cubic-bezier(.5,1.5,.75,1.25);
@@ -35,7 +35,7 @@ document.documentElement.setAttribute("data-theme",t);})();
   --accent:#D2714D; --accent-ink:#1E1B17; --accent-shadow:#7E3A22; --accent2:#86B9B8; --accent2-ink:#12201F; --brand:#86B9B8;
   --ok:#9CC47F; --bad:#E57A66; --gold:#DDB25A; --wash:#2F2A23;
   --door:#C98B4E; --window:#86B9B8;
-  --c1:#E57A66; --c2:#E39A5B; --c3:#DDB25A; --c4:#B6CF7A; --c5:#8CC47F; --rate-ink:#1E1B17; --unseen:#4B4339;
+  --c1:#E57A66; --c2:#E39A5B; --c3:#DDB25A; --c4:#B6CF7A; --c5:#8CC47F; --c6:#86B9B8; --rate-ink:#1E1B17; --unseen:#4B4339;
   --paper:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .95 0 0 0 0 .85 0 0 0 .07 0'/%3E%3C/filter%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.018' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3Crect width='240' height='240' filter='url(%23f)'/%3E%3C/svg%3E");
   color-scheme:dark;
 }
@@ -118,12 +118,11 @@ button,input,select{font:inherit;color:inherit}
 .desk{padding:10px 12px 9px;border:2px solid var(--line);background:var(--surface);border-radius:8px;text-align:left;min-width:0;cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
 .desk b{display:block;font-family:var(--display);font-weight:600;font-size:1.08rem}
 .desk span{font-size:.82rem;color:var(--muted)}
-.desk i{display:block;height:5px;border-radius:3px;background:var(--surface2);margin-top:8px;overflow:hidden}
-.desk i u{display:block;height:100%;background:var(--c5)}
+.desk i{display:flex;height:6px;border-radius:3px;background:var(--unseen);margin-top:8px;overflow:hidden}
+.desk i u{display:block;height:100%;flex:none}
 .desk[aria-pressed="true"]{border-color:var(--accent2);background:var(--accent2);color:var(--accent2-ink)}
 .desk[aria-pressed="true"] span{color:inherit;opacity:.85}
-.desk[aria-pressed="true"] i{background:rgba(0,0,0,.2)}
-.desk[aria-pressed="true"] i u{background:var(--accent2-ink)}
+.desk[aria-pressed="true"] i{outline:1px solid rgba(255,255,255,.35)}
 .quick{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
 .link{background:none;border:0;padding:4px 0;text-decoration:underline;text-underline-offset:3px;color:var(--muted);cursor:pointer;font-weight:700}
 .link:hover{color:var(--accent)}
@@ -182,6 +181,9 @@ button,input,select{font:inherit;color:inherit}
 .legend li{display:flex;align-items:center;gap:6px}
 .legend i{width:12px;height:12px;border-radius:3px;flex:none}
 .legend .grey{background:var(--unseen)}
+#mlegend{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));min-width:200px}
+#mlegend li{align-items:flex-start}
+#mlegend i{margin-top:4px}
 .seenbox{margin-top:14px;padding-top:12px;border-top:2px dashed var(--line);font-weight:700}
 .seenbox b{font-family:var(--display);font-size:1.5rem;display:block}
 .seenbox span{font-size:.85rem;color:var(--muted)}
@@ -379,10 +381,10 @@ footer a{color:inherit}
     <div class="histl"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
   </div>
   <div class="panel sum">
-    <h2>Mastery of your selected sets</h2>
+    <h2>Mastery of your selected sets <span class="muted small" id="mmethod"></span></h2>
     <div class="total"><div id="mtotal"></div><ul class="legend" id="mlegend" style="flex:1"></ul></div>
     <div class="subs" id="msubs"></div>
-    <p class="small muted" style="margin:12px 0 0">Mastery is the average of each word’s latest rating out of 5 in this direction. Words not yet seen count as 0%.</p>
+    <p class="small muted" style="margin:12px 0 0" id="mhow"></p>
   </div>
   <p class="small muted" id="sleft"></p>
   <div class="sumbtns">

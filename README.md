@@ -17,6 +17,7 @@ Live at https://janavduraikkannan.github.io/vocabula/
   - **Pimsleur:** "A Memory Schedule" (1967): the n-th interval is 5^n seconds.
   - **LSTM** and **GRU:** [srs-benchmark](https://github.com/open-spaced-repetition/srs-benchmark) models with its pretrained weights (`vendor/srs-benchmark-weights.js`); checked against a NumPy version of the same layers.
   - 1–5 buttons map to each source's grades (pass = 3 to 5; Again/Hard/Good/Easy = 1–2/3/4/5; SM-2 quality = 0/2/3/4/5). Predictive models schedule at 90% recall.
+- **Mastery** follows whichever scheduler is chosen, in that method's own terms, rebuilt from the review log so switching converts it instantly: predicted recall now for FSRS-6, FSRS-7, Ebisu, both Duolingo models, LSTM and GRU; interval stages for SM-2 (up to 3 weeks); Anki's learning / relearning / young / mature card types; Leitner's five compartments plus learned; progress through Pimsleur's 10 recalls; and the latest 1–5 rating for Legacy. The percent is the average per-word score, unseen words counting as 0.
 - **Accounts.** The same account as Verba and the other Linguae sites (`verba-account` in the browser). Progress is saved in `vocab/{account key}` in Firestore project `verba-791ca`, never in the account document. No leaderboard.
 - **firestore.rules** is the shared file from every Linguae repository. After changing it, publish it in the Firebase console and copy it to every repo.
 

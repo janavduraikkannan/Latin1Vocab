@@ -308,6 +308,33 @@ function mergeProgress(a,b){
   return out;
 }
 
-var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,SC:SC,logGet:logGet,dueOf:dueOf,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
+/* ---------- mastery for any method, over a list of cards ----------
+   Default (FSRS-6) uses ts-fsrs's predicted recall now; Legacy uses the latest 1-5 rating, as it always has;
+   the rest come from schedulers.js. Returns the method's categories with counts, plus the percent. */
+var LEGACY_MASTERY={cats:[["1","c1"],["2","c2"],["3","c3"],["4","c4"],["5","c5"]],
+  how:"Mastery is the average of each word’s latest rating out of 5. Words not yet seen count as 0%."};
+var mCache={};
+function masteryInfo(method){
+  if(method==="legacy") return LEGACY_MASTERY;
+  if(method==="new") return SC.MASTERY.recall;
+  return SC.MASTERY[SC.masteryKind(method)];
+}
+function cardMastery(method,cards,ext,id,now){
+  var c=cards[id]; if(!c&&!ext.log[id]) return null;
+  if(method==="legacy") return {cat:c?c.r-1:0,score:c?c.r/5:0};
+  if(method==="new"){ var r=recall(c,now); return {cat:SC.recallCat(r),score:r}; }
+  var key=method+"|"+id+"|"+(ext.log[id]||"")+"|"+(c?c.t:"")+"|"+Math.floor(now/6e4);
+  if(!(key in mCache)) mCache[key]=SC.masteryOf(method,logGet(ext,cards,id),id,now);
+  return mCache[key];
+}
+function mastery(method,cards,ext,list,now){
+  var info=masteryInfo(method), counts=info.cats.map(function(){return 0;}), unseen=0, total=0;
+  list.forEach(function(card){ var m=cardMastery(method,cards,ext,card.id,now);
+    if(!m){ unseen++; return; } counts[m.cat]++; total+=m.score; });
+  return {cats:info.cats.map(function(c,i){return {label:c[0],color:c[1],n:counts[i]};}),unseen:unseen,
+    pct:list.length?Math.round(100*total/list.length):0,how:info.how};
+}
+
+var VOCAB_ENGINE={mastery:mastery,masteryInfo:masteryInfo,SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,SC:SC,logGet:logGet,dueOf:dueOf,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
   newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
 if(typeof module!=="undefined") module.exports=VOCAB_ENGINE; else window.E=VOCAB_ENGINE;

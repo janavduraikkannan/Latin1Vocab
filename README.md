@@ -5,8 +5,9 @@ Latin vocab flashcards for Latin 1 (Vocab Quizzes 1 to 4, door and window sets),
 Live at https://janavduraikkannan.github.io/vocabula/
 
 - **Type, check, rate.** Type the word (a hyphen after a vowel makes a macron: `a-` → `ā`), press Enter, compare, and rate how well you knew it from 1 to 5.
-- **Twelve schedulers**, chosen at the bottom of the home page. Every rating is saved in a per-card review log (time, rating, time taken), and each scheduler works out due times from it, so switching loses nothing.
+- **Thirteen schedulers**, chosen at the bottom of the home page. Every rating is saved in a per-card review log (time, rating, time taken), and each scheduler works out due times from it, so switching loses nothing.
   - **Default:** FSRS-6 through [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) 5.4.2 (MIT, `vendor/`), exactly as shipped (learning steps 1 and 10 min, relearning 10 min, 90% retention).
+  - **Quiz mode:** no formula. Every word in the chosen sets once, in a random order (the session is always that size). At the end: **Try again**, and **Study mistakes** for every word rated below 5. After a Study mistakes round: **Again**, **Study mistakes** (what's still missed) and **Full quiz**. Answers count as reviews for every other scheduler; its mastery is the share of words rated 5 on their latest attempt.
   - **Legacy:** the first version's card-counting scheduler, written for this site.
   - **SM-2:** Woźniak's 1990 description and SuperMemo 2 plug-in code, including the same-day repeat of anything graded below 4.
   - **Anki SM-2:** rebuilt from Anki's `rslib/src/scheduler/states` with Anki's default deck options and review fuzz (no load balancer).

@@ -129,6 +129,7 @@ button,input,select{font:inherit;color:inherit}
 .len{display:flex;flex-direction:column;gap:8px}
 .len label{display:flex;align-items:center;gap:10px;padding:9px 12px;border:2px solid var(--line);border-radius:8px;background:var(--surface2);flex-wrap:wrap;cursor:pointer;font-weight:700}
 .len input[type=radio]{width:18px;height:18px;accent-color:var(--accent2);margin:0}
+.len.locked{opacity:.5;pointer-events:none}
 .len input[type=number]{width:84px;padding:5px 8px;border:2px solid var(--line);border-radius:6px;background:var(--surface)}
 
 .btn{background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:11px 22px;font-family:var(--ui);font-weight:800;font-size:1.05rem;letter-spacing:.01em;cursor:pointer;border:2px solid var(--accent-shadow);box-shadow:3px 3px 0 var(--accent-shadow);transition:transform .08s,box-shadow .08s,filter .15s}
@@ -298,8 +299,9 @@ footer a{color:inherit}
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel" id="lenpanel">
     <h2>Session length</h2>
+    <p class="small muted" id="lenlock" hidden style="margin:-4px 0 10px">Quiz mode always gives you every word in your chosen sets once, so the length is set to match.</p>
     <div class="len">
       <label><input type="radio" name="len" value="endless"> Endless <span class="muted small">(stop whenever you like)</span></label>
       <label><input type="radio" name="len" value="count"> <input type="number" id="count" min="1" max="999" value="10" aria-label="Number of cards"> cards</label>
@@ -389,6 +391,8 @@ footer a{color:inherit}
   <p class="small muted" id="sleft"></p>
   <div class="sumbtns">
     <button type="button" class="btn" id="repeat">Repeat session</button>
+    <button type="button" class="btn" id="mistakes" hidden>Study mistakes</button>
+    <button type="button" class="btn quiet" id="fullquiz" hidden>Full quiz</button>
     <button type="button" class="btn quiet" id="tohome">Change sets or direction</button>
   </div>
 </section>

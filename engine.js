@@ -250,10 +250,17 @@ function pickAdded(sess,cards,now,ext){
 
 /* ---------- the session ---------- */
 function newSession(pool,target,method){
+  if(method==="quiz"){ // Quiz mode: every word once, in one random order, no formula
+    var order=pool.slice(); for(var i=order.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), t=order[i]; order[i]=order[j]; order[j]=t; }
+    return {pool:pool,order:order,target:pool.length,method:"quiz",done:0,shown:{},last:null,newSeen:0,
+      ratings:[0,0,0,0,0,0],latest:{},sinceNew:0,lastWasNew:false};
+  }
   return {pool:pool,target:target||0,method:(method==="legacy"||SC.METHODS[method])?method:"new",done:0,shown:{},last:null,newSeen:0,
     ratings:[0,0,0,0,0,0],latest:{},sinceNew:0,lastWasNew:false};
 }
 function pick(sess,cards,now,lg,ext){
+  if(sess.method==="quiz"){ var q=sess.order[Math.min(sess.done,sess.order.length-1)];
+    return {card:q,kind:(cards[q.id]||(ext&&ext.log[q.id]))?"due":"new"}; }
   if(sess.method==="legacy") return pickLegacy(sess,cards,lg);
   if(SC.METHODS[sess.method]) return pickAdded(sess,cards,now,ext);
   var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
@@ -278,6 +285,7 @@ function rate(sess,cards,card,rating,now,kind,lg,ext,dur){
   if(kind==="new"){ sess.newSeen++; sess.sinceNew=0; sess.lastWasNew=true; } else { sess.sinceNew++; sess.lastWasNew=false; }
   return rec;
 }
+function missedIn(sess){ return sess.pool.filter(function(c){ return (c.id in sess.latest)&&sess.latest[c.id]<5; }); }
 function seenCount(sess){ return sess.pool.filter(function(c){return sess.shown[c.id];}).length; }
 
 /* ---------- saving and merging progress ---------- */
@@ -314,7 +322,10 @@ function mergeProgress(a,b){
 var LEGACY_MASTERY={cats:[["1","c1"],["2","c2"],["3","c3"],["4","c4"],["5","c5"]],
   how:"Mastery is the average of each word’s latest rating out of 5. Words not yet seen count as 0%."};
 var mCache={};
+var QUIZ_MASTERY={cats:[["Missed (rated 1–4)","c1"],["Right (rated 5)","c5"]],
+  how:"Mastery is your score on each word’s latest attempt: a word counts as right only if you rated it 5. Words not yet seen count as 0%."};
 function masteryInfo(method){
+  if(method==="quiz") return QUIZ_MASTERY;
   if(method==="legacy") return LEGACY_MASTERY;
   if(method==="new") return SC.MASTERY.recall;
   return SC.MASTERY[SC.masteryKind(method)];
@@ -322,6 +333,7 @@ function masteryInfo(method){
 function cardMastery(method,cards,ext,id,now){
   var c=cards[id]; if(!c&&!ext.log[id]) return null;
   if(method==="legacy") return {cat:c?c.r-1:0,score:c?c.r/5:0};
+  if(method==="quiz"){ var lg2=logGet(ext,cards,id), lr=lg2.length?lg2[lg2.length-1].r:(c?c.r:1); return {cat:lr===5?1:0,score:lr===5?1:0}; }
   if(method==="new"){ var r=recall(c,now); return {cat:SC.recallCat(r),score:r}; }
   var key=method+"|"+id+"|"+(ext.log[id]||"")+"|"+(c?c.t:"")+"|"+Math.floor(now/6e4);
   if(!(key in mCache)) mCache[key]=SC.masteryOf(method,logGet(ext,cards,id),id,now);
@@ -335,6 +347,6 @@ function mastery(method,cards,ext,list,now){
     pct:list.length?Math.round(100*total/list.length):0,how:info.how};
 }
 
-var VOCAB_ENGINE={mastery:mastery,masteryInfo:masteryInfo,SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,SC:SC,logGet:logGet,dueOf:dueOf,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
+var VOCAB_ENGINE={missedIn:missedIn,mastery:mastery,masteryInfo:masteryInfo,SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,SC:SC,logGet:logGet,dueOf:dueOf,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
   newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
 if(typeof module!=="undefined") module.exports=VOCAB_ENGINE; else window.E=VOCAB_ENGINE;

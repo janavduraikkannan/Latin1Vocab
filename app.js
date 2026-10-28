@@ -22,7 +22,7 @@ var PKEY="vocabula.progress", CKEY="vocabula.settings";
 var prog=E.blankProgress(), cfg={dir:"el",sets:[],len:"endless",count:10,method:"new"};
 try{var p0=JSON.parse(localStorage.getItem(PKEY)||"null");if(p0)prog=E.mergeProgress(p0,null);}catch(e){}
 try{var c0=JSON.parse(localStorage.getItem(CKEY)||"null");if(c0)["dir","sets","len","count","method"].forEach(function(k){if(c0[k]!=null)cfg[k]=c0[k];});}catch(e){}
-if(cfg.method!=="legacy"&&cfg.method!=="new"&&!E.SC.METHODS[cfg.method])cfg.method="new";
+if(cfg.method!=="legacy"&&cfg.method!=="new"&&cfg.method!=="quiz"&&!E.SC.METHODS[cfg.method])cfg.method="new";
 cfg.sets=cfg.sets.filter(function(id){return E.SETS.some(function(s){return s.id===id;});});
 function saveLocal(){try{localStorage.setItem(PKEY,JSON.stringify(prog));localStorage.setItem(CKEY,JSON.stringify(cfg));}catch(e){}}
 function cards(){return prog[cfg.dir];}
@@ -33,7 +33,7 @@ function seenIn(list){var m=cards();return list.filter(function(c){return m[c.id
 /* Mastery in the chosen scheduler's own terms, rebuilt from the review history (engine.js / schedulers.js). */
 function mOf(list){return E.mastery(cfg.method,cards(),{log:prog.log[cfg.dir],lb:prog.lb[cfg.dir]},list,Date.now());}
 function mastery(list){return mOf(list).pct;}
-function methodName(){return cfg.method==="new"?"Default (FSRS-6)":cfg.method==="legacy"?"Legacy":E.SC.METHODS[cfg.method].name;}
+function methodName(){return cfg.method==="new"?"Default (FSRS-6)":cfg.method==="legacy"?"Legacy":cfg.method==="quiz"?"Quiz mode":E.SC.METHODS[cfg.method].name;}
 function segBar(list){ // the method's categories as one stacked bar
   var m=mOf(list),bar=document.createElement("i");
   m.cats.forEach(function(c){ if(!c.n) return; var u=document.createElement("u");u.style.width=(100*c.n/list.length)+"%";u.style.background="var(--"+c.color+")";u.title=c.label+": "+c.n;bar.appendChild(u); });
@@ -167,7 +167,9 @@ function renderHome(){
   [].forEach.call(document.getElementsByName("len"),function(r){r.checked=r.value===cfg.len;});
   $("count").value=cfg.count;$("warn").hidden=true;
   renderMethods();
-  $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring each word back right when you’re about to forget it.";
+  var q=cfg.method==="quiz";$("lenlock").hidden=!q;document.querySelector(".len").classList.toggle("locked",q);
+  [].forEach.call(document.querySelectorAll('#lenpanel input'),function(x){x.disabled=q;});
+  $("bubbleRule").textContent=q?"Every word once, in a random order, then you can study your mistakes.":cfg.method==="legacy"?"New words come in every few cards.":"I bring each word back right when you’re about to forget it.";
   $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery with "+methodName()+".";
 }
 $("dirs").onclick=function(e){var b=e.target.closest("button");if(!b)return;cfg.dir=b.dataset.dir;saveLocal();renderHome();};
@@ -189,6 +191,9 @@ var MINFO=[
  {id:"legacy",label:"Legacy",title:"Legacy",showOnPick:true,html:
   '<p><b>What it does.</b> The scheduler from the first version of this site. It isn’t a published method: it was written for Vocābula, loosely after Brainscape’s 1 to 5 confidence buttons. It counts in cards, not days: a word you rate 1 comes back after about 3 cards, a 5 after about 50, and repeated 4s and 5s push it further out. Weak words that are due come first, and a new word arrives at least every fifth card.</p>'+
   '<p><b>Why you might pick it.</b> It brings in new words fast and doesn’t care how many days pass, so it suits going through a whole list in one sitting.</p>'},
+ {id:"quiz",label:"Quiz mode",html:
+  '<p><b>What it does.</b> No formula: every word in your chosen sets comes up exactly once, in a random order, like a practice test. The session is always the size of your sets. Rate each word from 1 to 5 as usual. At the end, Study mistakes gives you every word you rated below 5, shuffled, and you can keep studying the ones you still miss.</p>'+
+  '<p><b>Why.</b> It checks every word before a real quiz and shows exactly which ones you don’t know yet. Your answers still count as reviews for the other schedulers.</p>'},
  {id:"sm2",label:"SM-2",html:
   '<p><b>What it does.</b> Piotr Woźniak’s 1987 algorithm, the first computer spaced-repetition scheduler, from '+L("https://www.supermemo.com/en/archives1990-2015/english/ol/sm2","his 1990 description")+' and his SuperMemo 2 source code. After a pass a word comes back in 1 day, then 6 days, then each interval times the word’s easiness factor, which starts at 2.5, drops when you struggle and never goes below 1.3. A 1 or 2 restarts it at 1 day. Anything you rate below 4 comes back again the same day until you give it a 4 or 5.</p>'+
   '<p><b>Why.</b> It’s the ancestor of nearly every flashcard scheduler, including Anki’s.</p>'},
@@ -243,7 +248,12 @@ $("start").onclick=function(){if(!cfg.sets.length){$("warn").hidden=false;return
 
 /* ---------- study ---------- */
 var sess=null,cur=null,revealed=false,shownAt=0;
-function startSession(){sess=E.newSession(pool(),cfg.len==="count"?Math.max(1,cfg.count|0):0,cfg.method);show("study");next();}
+/* kind: "full" (the chosen sets) or "mistakes" (Quiz mode: a list of missed words) */
+function startSession(list,kind){
+  var p=Array.isArray(list)?list:pool();
+  sess=E.newSession(p,cfg.len==="count"?Math.max(1,cfg.count|0):0,cfg.method);sess.kind=kind==="mistakes"?"mistakes":"full";
+  show("study");next();
+}
 function next(){
   if(sess.target&&sess.done>=sess.target){finish();return;}
   cur=E.pick(sess,cards(),Date.now(),legacy(),ext());shownAt=Date.now();revealed=false;
@@ -267,7 +277,7 @@ function renderSide(){
   var L=$("legend");L.textContent="";
   for(i=1;i<=5;i++){var li=document.createElement("li"),sw=document.createElement("i");sw.className="r"+i;li.appendChild(sw);li.appendChild(document.createTextNode(i+": "+n[i]));L.appendChild(li);}
   $("seenn").textContent=E.seenCount(sess)+" / "+sess.pool.length;
-  $("cyclelbl").textContent=sess.method==="legacy"?"Legacy scheduler: a new word comes at least every fifth card."
+  $("cyclelbl").textContent=sess.method==="quiz"?(sess.kind==="mistakes"?"Study mistakes: each missed word once, in a random order.":"Quiz mode: every word once, in a random order."):sess.method==="legacy"?"Legacy scheduler: a new word comes at least every fifth card."
     :sess.method==="leitner"?"Leitner: each compartment is worked through when it fills up."
     :(sess.method==="new"?"FSRS-6":E.SC.METHODS[sess.method].name)+": cards come back when they’re due, and new words come in whenever nothing is due.";
 }
@@ -292,12 +302,22 @@ function finish(){
   $("snew").textContent=sess.newSeen;$("savg").textContent=(sum/sess.done).toFixed(1);
   var max=Math.max.apply(null,sess.ratings.slice(1)),h=$("hist");h.textContent="";
   for(i=1;i<=5;i++){var d=document.createElement("div");d.className="r"+i;d.style.height=(max?100*sess.ratings[i]/max:0)+"%";var s=document.createElement("span");s.textContent=sess.ratings[i];d.appendChild(s);h.appendChild(d);}
-  $("sumline").textContent=dirName(cfg.dir)+" · "+cfg.sets.length+(cfg.sets.length===1?" set":" sets")+" ("+sess.pool.length+" words)";
+  $("sumline").textContent=dirName(cfg.dir)+" · "+cfg.sets.length+(cfg.sets.length===1?" set":" sets")+" ("+pool().length+" words)"+
+    (sess.method==="quiz"?(sess.kind==="mistakes"?" · Study mistakes: "+sess.pool.length+" words":" · Quiz mode"):"");
   renderMastery();
   var left=sess.pool.length-seenIn(sess.pool);
   $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":sess.method==="leitner"?"The Leitner box adds one whenever its first compartment has room.":"New words come in whenever nothing is due.")
     :"Every word in these sets has been introduced. Repeating brings back whatever is due, weakest first.";
-  show("summary");$("repeat").focus();
+  var quiz=sess.method==="quiz", missed=quiz?E.missedIn(sess):[];
+  if(quiz){
+    var right=sess.done-missed.length;
+    $("sleft").textContent=(sess.done<sess.pool.length?"You answered "+sess.done+" of "+sess.pool.length+" words. ":"")+
+      (missed.length?"You rated "+right+" of "+sess.done+" words a 5. Study mistakes gives you the "+missed.length+" you rated lower, in a new random order.":"You rated every word a 5.");
+    $("repeat").textContent=sess.kind==="mistakes"?"Again":"Try again";
+  } else $("repeat").textContent="Repeat session";
+  $("mistakes").hidden=!missed.length; $("mistakes").textContent="Study mistakes ("+missed.length+")"; sess.missed=missed;
+  $("fullquiz").hidden=!(quiz&&sess.kind==="mistakes");
+  show("summary");$(missed.length?"mistakes":"repeat").focus();
 }
 function donut(list,size,label){
   var m=mOf(list),tot=list.length,stops=[],acc=0;
@@ -309,8 +329,8 @@ function donut(list,size,label){
   return d;
 }
 function renderMastery(){
-  var T=$("mtotal");T.textContent="";T.appendChild(donut(sess.pool,"big","mastery"));
-  var m=mOf(sess.pool),L=$("mlegend");L.textContent="";
+  var T=$("mtotal");T.textContent="";T.appendChild(donut(pool(),"big","mastery"));
+  var m=mOf(pool()),L=$("mlegend");L.textContent="";
   m.cats.map(function(c){return [c.label,c.n,"var(--"+c.color+")"];}).concat([["Not seen",m.unseen,"var(--unseen)"]]).forEach(function(p){
     var li=document.createElement("li"),sw=document.createElement("i");sw.style.background=p[2];li.appendChild(sw);li.appendChild(document.createTextNode(p[0]+": "+p[1]));L.appendChild(li);});
   $("mmethod").textContent=methodName();$("mhow").textContent=m.how;
@@ -332,7 +352,9 @@ document.addEventListener("keydown",function(e){
   if(e.key>="1"&&e.key<="5"){e.preventDefault();rateNow(+e.key);}
 });
 $("end").onclick=finish;
-$("repeat").onclick=startSession;
+$("repeat").onclick=function(){ startSession(sess&&sess.kind==="mistakes"?sess.pool:null,sess&&sess.kind); }; // Again / Try again / Repeat session
+$("mistakes").onclick=function(){ startSession(sess.missed,"mistakes"); };
+$("fullquiz").onclick=function(){ startSession(null,"full"); };
 $("tohome").onclick=function(){show("home");renderHome();};
 
 renderHome();acctUI();

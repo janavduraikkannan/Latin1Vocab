@@ -47,7 +47,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/accounts/$(id))
         && request.resource.data.keys().hasOnly(['data', 'updated'])
         && request.resource.data.data is string
-        && request.resource.data.data.size() < 200000;
+        && request.resource.data.data.size() < 900000;
       allow list, delete: if false;
     }
 

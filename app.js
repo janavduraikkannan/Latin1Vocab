@@ -22,11 +22,12 @@ var PKEY="vocabula.progress", CKEY="vocabula.settings";
 var prog=E.blankProgress(), cfg={dir:"el",sets:[],len:"endless",count:10,method:"new"};
 try{var p0=JSON.parse(localStorage.getItem(PKEY)||"null");if(p0)prog=E.mergeProgress(p0,null);}catch(e){}
 try{var c0=JSON.parse(localStorage.getItem(CKEY)||"null");if(c0)["dir","sets","len","count","method"].forEach(function(k){if(c0[k]!=null)cfg[k]=c0[k];});}catch(e){}
-if(cfg.method!=="legacy")cfg.method="new";
+if(cfg.method!=="legacy"&&cfg.method!=="new"&&!E.SC.METHODS[cfg.method])cfg.method="new";
 cfg.sets=cfg.sets.filter(function(id){return E.SETS.some(function(s){return s.id===id;});});
 function saveLocal(){try{localStorage.setItem(PKEY,JSON.stringify(prog));localStorage.setItem(CKEY,JSON.stringify(cfg));}catch(e){}}
 function cards(){return prog[cfg.dir];}
 function legacy(){return prog.lg[cfg.dir];}
+function ext(){return {log:prog.log[cfg.dir],lb:prog.lb[cfg.dir]};}
 function pool(){return E.ALL.filter(function(c){return cfg.sets.indexOf(c.set.id)>=0;});}
 function seenIn(list){var m=cards();return list.filter(function(c){return m[c.id];}).length;}
 function mastery(list){var m=cards(),t=0;list.forEach(function(c){if(m[c.id])t+=m[c.id].r;});return list.length?Math.round(100*t/(5*list.length)):0;}
@@ -158,7 +159,7 @@ function renderHome(){
   });
   [].forEach.call(document.getElementsByName("len"),function(r){r.checked=r.value===cfg.len;});
   $("count").value=cfg.count;$("warn").hidden=true;
-  [].forEach.call(document.querySelectorAll(".mbtn"),function(b){b.setAttribute("aria-pressed",b.dataset.m===cfg.method);});
+  renderMethods();
   $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring each word back right when you’re about to forget it.";
   $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery.";
 }
@@ -170,23 +171,75 @@ $("count").onfocus=function(){cfg.len="count";saveLocal();document.getElementsBy
 $("count").oninput=function(){var n=parseInt($("count").value,10);if(n>0){cfg.count=Math.min(999,n);saveLocal();}};
 $("reset").onclick=function(){
   if(!confirm("Erase all your ratings for "+dirName(cfg.dir)+"? This also erases them from your account."))return;
-  prog[cfg.dir]={};prog.lg[cfg.dir]={step:0,cards:{}};prog.reset[cfg.dir]=Date.now();saveLocal();syncSoon();renderHome();
+  prog[cfg.dir]={};prog.lg[cfg.dir]={step:0,cards:{}};prog.log[cfg.dir]={};prog.lb[cfg.dir]={cards:{}};prog.reset[cfg.dir]=Date.now();saveLocal();syncSoon();renderHome();
 };
+/* ---------- scheduler choice ---------- */
+var L=function(href,t){return '<a href="'+href+'">'+t+'</a>';};
+var MINFO=[
+ {id:"new",label:'Default<span class="muted small">FSRS-6</span>',title:"Default: FSRS-6",html:
+  '<p><b>What it does.</b> It uses FSRS-6, the Free Spaced Repetition Scheduler built into Anki, through '+L("https://github.com/open-spaced-repetition/ts-fsrs","ts-fsrs")+', its maintained open-source code, exactly as it ships. For each word it estimates when you’ll forget it, and brings it back when your chance of remembering falls to 90%. A word you’re still learning, or just forgot, comes back after 1 or 10 minutes. Whenever nothing is due, you get a new word. Ratings of 1 and 2 count as forgotten, 3 as Hard, 4 as Good and 5 as Easy.</p>'+
+  '<p><b>Why.</b> In the research behind this site, FSRS was the best open scheduler at predicting whether you’ll remember a card, on the largest open test (about 350 million Anki reviews). That test isn’t peer-reviewed and measures prediction rather than words learned.</p>'},
+ {id:"legacy",label:"Legacy",title:"Legacy",showOnPick:true,html:
+  '<p><b>What it does.</b> The scheduler from the first version of this site. It isn’t a published method: it was written for Vocābula, loosely after Brainscape’s 1 to 5 confidence buttons. It counts in cards, not days: a word you rate 1 comes back after about 3 cards, a 5 after about 50, and repeated 4s and 5s push it further out. Weak words that are due come first, and a new word arrives at least every fifth card.</p>'+
+  '<p><b>Why you might pick it.</b> It brings in new words fast and doesn’t care how many days pass, so it suits going through a whole list in one sitting.</p>'},
+ {id:"sm2",label:"SM-2",html:
+  '<p><b>What it does.</b> Piotr Woźniak’s 1987 algorithm, the first computer spaced-repetition scheduler, from '+L("https://www.supermemo.com/en/archives1990-2015/english/ol/sm2","his 1990 description")+' and his SuperMemo 2 source code. After a pass a word comes back in 1 day, then 6 days, then each interval times the word’s easiness factor, which starts at 2.5, drops when you struggle and never goes below 1.3. A 1 or 2 restarts it at 1 day. Anything you rate below 4 comes back again the same day until you give it a 4 or 5.</p>'+
+  '<p><b>Why.</b> It’s the ancestor of nearly every flashcard scheduler, including Anki’s.</p>'},
+ {id:"anki-sm2",label:"Anki SM-2",html:
+  '<p><b>What it does.</b> Anki’s default scheduler before FSRS, rebuilt from '+L("https://github.com/ankitects/anki/tree/main/rslib/src/scheduler/states","Anki’s source code")+' with its default settings. A new word steps through 1 and 10 minutes, then comes back in 1 day (4 days if you rate it 5). After that each Good multiplies the interval by the word’s ease, which starts at 250%, drops 15% for Hard and 20% for Again, and rises 15% for Easy, with Anki’s small random spread. A forgotten word comes back after 10 minutes, then restarts at 1 day. Anki’s load balancer isn’t included, because it spreads cards across a whole collection’s days.</p>'+
+  '<p><b>Why.</b> It’s what millions of Anki users studied with for over a decade, and the baseline FSRS is usually compared against.</p>'},
+ {id:"ebisu",label:"Ebisu v2",html:
+  '<p><b>What it does.</b> Ahmed Fasih’s Bayesian model, through '+L("https://github.com/fasiha/ebisu.js","ebisu.js")+' 2.1.3. It keeps a probability distribution over how long each word lasts in memory, starting from the library’s recommended one day, and updates it after each pass (3 to 5) or fail (1 or 2). A word comes back when its predicted recall drops to 90%.</p>'+
+  '<p><b>Why.</b> It’s a careful statistical model of forgetting. In the research’s benchmark it predicted recall less well than FSRS-6 (log loss 0.499 against 0.346).</p>'},
+ {id:"fsrs7",label:"FSRS-7",html:
+  '<p><b>What it does.</b> The newest FSRS, from '+L("https://github.com/open-spaced-repetition/fsrs-rs","fsrs-rs")+', the official Rust code, with its 34 default weights. It tracks a fast and a slow memory trace for each word and handles reviews minutes apart directly, so there are no separate learning steps: each word is due when its predicted recall falls to 90%. Ratings of 1 and 2 count as forgotten, 3 as Hard, 4 as Good and 5 as Easy.</p>'+
+  '<p><b>Why.</b> In the benchmark, once its weights are tuned to each user, it predicts recall better than FSRS-6. Here it runs on its default weights, which the benchmark scores below tuned FSRS-6, and no comparison with FSRS-6’s defaults is published. It’s also much newer, with far less real-world use.</p>'},
+ {id:"leitner",label:"Leitner",html:
+  '<p><b>What it does.</b> Sebastian Leitner’s 1972 learning box from <i>So lernt man lernen</i>. Five compartments 1, 2, 5, 8 and 14 cm deep, scaled here to hold exactly the words you picked. New words go into the first. When a compartment is full you work through it: a word you know (3 to 5) moves on one compartment, a word you don’t goes back to the first, and a word that passes the fifth is learned.</p>'+
+  '<p><b>Why.</b> It’s the classic paper flashcard method. It ignores dates and only looks at how full each compartment is. The book isn’t online, so these rules come from descriptions of it.</p>'},
+ {id:"leitner-duo",label:"Leitner (Duolingo)",html:
+  '<p><b>What it does.</b> The Leitner-style model Duolingo launched with, from its '+L("https://github.com/duolingo/halflife-regression","released research code")+' (Settles and Meeder, 2016). Each word’s memory half-life is 2 to the power of (times right − times wrong) days, kept between 15 minutes and 9 months, and the word is due when predicted recall falls to 90%. Ratings of 3 to 5 count as right.</p>'+
+  '<p><b>Why.</b> It’s the baseline in Duolingo’s live test of its later model, which found no significant overall gain from switching.</p>'},
+ {id:"pimsleur",label:"Pimsleur",html:
+  '<p><b>What it does.</b> Paul Pimsleur’s graduated interval recall, from '+L("https://files.eric.ed.gov/fulltext/ED012150.pdf","“A Memory Schedule”")+' (1967). Each review comes 5ⁿ seconds after the last: 5 s, 25 s, about 2 min, 10 min, 52 min, 4.3 h, 22 h, 4.5 days, 23 days, then 113 days. Missing a word doesn’t change the schedule, because in the paper you’re reminded of the answer either way.</p>'+
+  '<p><b>Why.</b> It’s the schedule behind the Pimsleur audio courses, built for fast repetition just after you first learn a word.</p>'},
+ {id:"pimsleur-duo",label:"Pimsleur (Duolingo)",html:
+  '<p><b>What it does.</b> Duolingo’s version of Pimsleur’s schedule, from the same '+L("https://github.com/duolingo/halflife-regression","research code")+'. Each word’s half-life is 2 to the power of (2.35 × reviews − 16.46) days, kept between 15 minutes and 9 months, and the word is due when predicted recall falls to 90%. Like the original, it counts reviews, not whether you were right.</p>'+
+  '<p><b>Why.</b> It’s one of the baselines in Duolingo’s research, which measured how well each schedule predicts forgetting.</p>'},
+ {id:"lstm",label:"LSTM",html:
+  '<p><b>What it does.</b> A neural network from the '+L("https://github.com/open-spaced-repetition/srs-benchmark","open benchmark")+' in the research, with the weights it was pretrained with on 100 Anki users. It reads a word’s whole history (the time between reviews, each rating, and how long you took to answer) and predicts a forgetting curve; the word is due when that curve reaches 90%.</p>'+
+  '<p><b>Why.</b> On the benchmark it predicts recall better than every FSRS version, but only after being fine-tuned to each user. Here it runs on the pretrained weights alone, which the benchmark doesn’t score separately. It’s also hard to see why it makes each choice.</p>'},
+ {id:"gru",label:"GRU",html:
+  '<p><b>What it does.</b> A much smaller neural network (503 numbers against the LSTM’s 8,869) from the same '+L("https://github.com/open-spaced-repetition/srs-benchmark","benchmark")+', pretrained the same way. It uses the time between reviews and each rating, but not how long you took, and the word is due when its predicted forgetting curve reaches 90%.</p>'+
+  '<p><b>Why.</b> On the benchmark it predicts recall about as well as the LSTM at a fraction of the size, again after fine-tuning to each user; here it runs on the pretrained weights alone.</p>'}
+];
+var openInfo=null;
+function renderMethods(){
+  var M=$("methods"); M.textContent="";
+  MINFO.forEach(function(m){
+    var d=document.createElement("div");d.className="mopt";
+    d.innerHTML='<button type="button" class="mbtn" data-m="'+m.id+'" aria-pressed="'+(cfg.method===m.id)+'">'+m.label+'</button>'+
+      '<button type="button" class="ibtn" data-i="'+m.id+'" aria-expanded="'+(openInfo===m.id)+'" aria-controls="minfo" aria-label="About '+esc(m.title||m.label)+'">i</button>';
+    M.appendChild(d);
+  });
+  var box=$("minfo"), m=MINFO.filter(function(x){return x.id===openInfo;})[0];
+  box.hidden=!m; if(m) box.innerHTML="<h3>"+esc(m.title||m.label)+"</h3>"+m.html;
+}
 $("methods").onclick=function(e){
-  var m=e.target.closest(".mbtn"),i=e.target.closest(".ibtn");
-  if(m){cfg.method=m.dataset.m;saveLocal();renderHome();}
-  if(i){var box=$("info-"+i.dataset.i),open=box.hidden;
-    ["new","legacy"].forEach(function(k){$("info-"+k).hidden=true;document.querySelector('.ibtn[data-i="'+k+'"]').setAttribute("aria-expanded","false");});
-    box.hidden=!open;i.setAttribute("aria-expanded",open);}
+  var b=e.target.closest(".mbtn"),i=e.target.closest(".ibtn");
+  if(b){cfg.method=b.dataset.m;saveLocal();var m=MINFO.filter(function(x){return x.id===cfg.method;})[0];
+    if(m.showOnPick) openInfo=m.id; else if(openInfo==="legacy") openInfo=null;
+    renderMethods();renderHome();}
+  if(i){openInfo=openInfo===i.dataset.i?null:i.dataset.i;renderMethods();}
 };
 $("start").onclick=function(){if(!cfg.sets.length){$("warn").hidden=false;return;}startSession();};
 
 /* ---------- study ---------- */
-var sess=null,cur=null,revealed=false;
+var sess=null,cur=null,revealed=false,shownAt=0;
 function startSession(){sess=E.newSession(pool(),cfg.len==="count"?Math.max(1,cfg.count|0):0,cfg.method);show("study");next();}
 function next(){
   if(sess.target&&sess.done>=sess.target){finish();return;}
-  cur=E.pick(sess,cards(),Date.now(),legacy());revealed=false;
+  cur=E.pick(sess,cards(),Date.now(),legacy(),ext());shownAt=Date.now();revealed=false;
   var c=cur.card,toLatin=cfg.dir==="el";
   $("card").className="card "+c.set.side;
   $("tag").innerHTML="Set "+c.set.quiz+", "+cap(c.set.side)+(cur.kind==="new"?'<span class="new">· new word</span>':"");
@@ -207,7 +260,9 @@ function renderSide(){
   var L=$("legend");L.textContent="";
   for(i=1;i<=5;i++){var li=document.createElement("li"),sw=document.createElement("i");sw.className="r"+i;li.appendChild(sw);li.appendChild(document.createTextNode(i+": "+n[i]));L.appendChild(li);}
   $("seenn").textContent=E.seenCount(sess)+" / "+sess.pool.length;
-  $("cyclelbl").textContent=sess.method==="legacy"?"Legacy scheduler: a new word comes at least every fifth card.":"FSRS-6: cards come back when they’re due, and new words come in whenever nothing is due.";
+  $("cyclelbl").textContent=sess.method==="legacy"?"Legacy scheduler: a new word comes at least every fifth card."
+    :sess.method==="leitner"?"Leitner: each compartment is worked through when it fills up."
+    :(sess.method==="new"?"FSRS-6":E.SC.METHODS[sess.method].name)+": cards come back when they’re due, and new words come in whenever nothing is due.";
 }
 var MAC={a:"ā",e:"ē",i:"ī",o:"ō",u:"ū",y:"ȳ",A:"Ā",E:"Ē",I:"Ī",O:"Ō",U:"Ū",Y:"Ȳ"};
 var macronize=function(s){return s.replace(/([aeiouyAEIOUY])-/g,function(m,v){return MAC[v];});};
@@ -221,7 +276,7 @@ function reveal(){
 }
 function rateNow(r){
   if(!revealed)return;
-  E.rate(sess,cards(),cur.card,r,Date.now(),cur.kind,legacy());saveLocal();syncSoon();next();
+  E.rate(sess,cards(),cur.card,r,Date.now(),cur.kind,legacy(),ext(),Date.now()-shownAt);saveLocal();syncSoon();next();
 }
 function finish(){
   if(!sess.done){show("home");renderHome();return;}
@@ -233,7 +288,7 @@ function finish(){
   $("sumline").textContent=dirName(cfg.dir)+" · "+cfg.sets.length+(cfg.sets.length===1?" set":" sets")+" ("+sess.pool.length+" words)";
   renderMastery();
   var left=sess.pool.length-seenIn(sess.pool);
-  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":"New words come in whenever nothing is due.")
+  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":sess.method==="leitner"?"The Leitner box adds one whenever its first compartment has room.":"New words come in whenever nothing is due.")
     :"Every word in these sets has been introduced. Repeating brings back whatever is due, weakest first.";
   show("summary");$("repeat").focus();
 }

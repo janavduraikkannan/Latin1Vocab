@@ -148,6 +148,7 @@ SETS.forEach(function(s){ s.cards = s.cards.map(function(c,i){
    learning steps 1 min and 10 min, relearning step 10 min, short-term scheduling on, no fuzz, 100-year maximum),
    and every rating goes through its next(). Each card stores the ts-fsrs card it returns. */
 var TS=(typeof FSRS!=="undefined")?FSRS:require("./vendor/ts-fsrs-5.4.2.umd.js");
+var SC=(typeof SCHED!=="undefined")?SCHED:require("./schedulers.js");
 var FSRS6=TS.fsrs();
 var W=TS.default_w, DAY=864e5;
 /* The only bridge Vocābula adds: its 1-5 buttons map onto FSRS's four grades.
@@ -211,13 +212,50 @@ function pickLegacy(sess,cards,lg){
   return {card:card,kind:isNew?"new":"due"};
 }
 
+/* ---------- the review log (used by the added schedulers) ----------
+   Per direction, per card: "t,r,d;t,r,d" with t = seconds since 1970 in base 36, r = the 1-5 rating,
+   d = milliseconds taken in base 36. */
+function logGet(ext,cards,id){
+  var s=ext.log[id];
+  if(!s){ var c=cards[id]; return c?[{t:c.t,r:c.r,d:8000}]:[]; } // seen before the log existed: one review at the last rating
+  return s.split(";").map(function(e){ var p=e.split(","); return {t:parseInt(p[0],36)*1000,r:+p[1],d:parseInt(p[2],36)}; });
+}
+function logAdd(ext,cards,id,rating,now,dur){
+  var prev=ext.log[id]||(cards[id]?Math.floor(cards[id].t/1000).toString(36)+","+cards[id].r+","+(8000).toString(36):"");
+  var e=Math.floor(now/1000).toString(36)+","+rating+","+Math.round(Math.min(Math.max(dur||0,0),6e5)).toString(36);
+  ext.log[id]=prev?prev+";"+e:e;
+}
+var dueCache={};
+function dueOf(method,ext,cards,id){
+  var raw=ext.log[id]||"", key=method+"|"+id+"|"+raw+"|"+(cards[id]?cards[id].t:"");
+  if(!(key in dueCache)){ var r=SC.METHODS[method].sched(logGet(ext,cards,id),id); dueCache[key]=r?r.due:null; }
+  return dueCache[key];
+}
+/* Queue for the added schedulers (they set due times, not an order): whatever is due, earliest first; a new word
+   whenever nothing is due; otherwise the card due soonest, shown a little early. The Leitner box has its own. */
+function pickAdded(sess,cards,now,ext){
+  var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
+  var seenFn=function(c){return !!(cards[c.id]||ext.log[c.id]);};
+  if(SC.METHODS[sess.method].box) return SC.lbPick(ext.lb,cand,seenFn);
+  var seen=cand.filter(seenFn), due={};
+  seen.forEach(function(c){ due[c.id]=dueOf(sess.method,ext,cards,c.id); });
+  var byDue=function(a,b){return due[a.id]-due[b.id];};
+  var ready=seen.filter(function(c){return due[c.id]<=now;}).sort(byDue);
+  if(ready.length) return {card:ready[0],kind:"due"};
+  var fresh=cand.filter(function(c){return !seenFn(c);});
+  if(fresh.length) return {card:fresh[Math.floor(Math.random()*fresh.length)],kind:"new"};
+  if(seen.length) return {card:seen.sort(byDue)[0],kind:"early"};
+  return {card:pool[0],kind:"new"};
+}
+
 /* ---------- the session ---------- */
 function newSession(pool,target,method){
-  return {pool:pool,target:target||0,method:method==="legacy"?"legacy":"new",done:0,shown:{},last:null,newSeen:0,
+  return {pool:pool,target:target||0,method:(method==="legacy"||SC.METHODS[method])?method:"new",done:0,shown:{},last:null,newSeen:0,
     ratings:[0,0,0,0,0,0],latest:{},sinceNew:0,lastWasNew:false};
 }
-function pick(sess,cards,now,lg){
+function pick(sess,cards,now,lg,ext){
   if(sess.method==="legacy") return pickLegacy(sess,cards,lg);
+  if(SC.METHODS[sess.method]) return pickAdded(sess,cards,now,ext);
   var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
   var byDue=function(a,b){return dueAt(cards[a.id])-dueAt(cards[b.id]);};
   var seen=cand.filter(function(c){return cards[c.id];});
@@ -232,8 +270,9 @@ function pick(sess,cards,now,lg){
   return {card:pool[0],kind:cards[pool[0].id]?"early":"new"};
 }
 /* Record a rating in the session and return the card's new memory record. */
-function rate(sess,cards,card,rating,now,kind,lg){
+function rate(sess,cards,card,rating,now,kind,lg,ext,dur){
   if(lg) lgSchedule(lg,cards,card.id,rating,now); // legacy record first: it reads the card's state before this rating
+  if(ext){ logAdd(ext,cards,card.id,rating,now,dur); SC.lbUpdate(ext.lb,card.id,rating,now); } // log before the FSRS-6 record changes
   var rec=review(cards[card.id],rating,now); cards[card.id]=rec;
   sess.done++; sess.ratings[rating]++; sess.latest[card.id]=rating; sess.shown[card.id]=1; sess.last=card.id;
   if(kind==="new"){ sess.newSeen++; sess.sinceNew=0; sess.lastWasNew=true; } else { sess.sinceNew++; sess.lastWasNew=false; }
@@ -242,11 +281,12 @@ function rate(sess,cards,card,rating,now,kind,lg){
 function seenCount(sess){ return sess.pool.filter(function(c){return sess.shown[c.id];}).length; }
 
 /* ---------- saving and merging progress ---------- */
-function blankProgress(){ return {v:1,el:{},le:{},reset:{el:0,le:0},lg:{el:{step:0,cards:{}},le:{step:0,cards:{}}}}; }
+function blankProgress(){ return {v:1,el:{},le:{},reset:{el:0,le:0},lg:{el:{step:0,cards:{}},le:{step:0,cards:{}}},
+  log:{el:{},le:{}},lb:{el:{cards:{}},le:{cards:{}}}}; }
 /* Merge two progress records card by card: the later review wins; a reset wipes everything reviewed before it. */
 function mergeProgress(a,b){
   a=a||blankProgress(); b=b||blankProgress();
-  var out={v:1,el:{},le:{},reset:{},lg:{}};
+  var out={v:1,el:{},le:{},reset:{},lg:{},log:{},lb:{}};
   ["el","le"].forEach(function(dir){
     var rs=Math.max((a.reset||{})[dir]||0,(b.reset||{})[dir]||0); out.reset[dir]=rs;
     [a[dir]||{},b[dir]||{}].forEach(function(m){ Object.keys(m).forEach(function(id){
@@ -255,10 +295,19 @@ function mergeProgress(a,b){
     [la.cards||{},lb.cards||{}].forEach(function(m){ Object.keys(m).forEach(function(id){
       var c=m[id]; if(!c||(c.t||0)<rs) return; if(!lo.cards[id]||(c.t||0)>(lo.cards[id].t||0)) lo.cards[id]=c; }); });
     out.lg[dir]=lo;
+    var gl={};                                   // review logs: union of both sides, by time
+    [((a.log||{})[dir])||{},((b.log||{})[dir])||{}].forEach(function(m){ Object.keys(m).forEach(function(id){
+      m[id].split(";").forEach(function(e){ if(parseInt(e,36)*1000<rs) return; (gl[id]=gl[id]||{})[e.split(",")[0]]=e; }); }); });
+    out.log[dir]={}; Object.keys(gl).forEach(function(id){ var ks=Object.keys(gl[id]).sort(function(x,y){return parseInt(x,36)-parseInt(y,36);});
+      out.log[dir][id]=ks.map(function(k){return gl[id][k];}).join(";"); });
+    var ba=((a.lb||{})[dir]||{}).cards||{}, bb=((b.lb||{})[dir]||{}).cards||{}, bo={cards:{}};
+    [ba,bb].forEach(function(m){ Object.keys(m).forEach(function(id){ var c=m[id]; if(!c||c.at<rs) return;
+      if(!bo.cards[id]||c.at>bo.cards[id].at) bo.cards[id]=c; }); });
+    out.lb[dir]=bo;
   });
   return out;
 }
 
-var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
+var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,SC:SC,logGet:logGet,dueOf:dueOf,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
   newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
 if(typeof module!=="undefined") module.exports=VOCAB_ENGINE; else window.E=VOCAB_ENGINE;

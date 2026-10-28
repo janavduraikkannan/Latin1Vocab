@@ -227,13 +227,15 @@ dialog.acct .hint{color:var(--muted);font-size:.88rem;margin:6px 0 0}
 .lgtabs{display:inline-flex;gap:4px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:3px;margin:8px 0 4px}
 .lgtabs button{background:none;border:0;padding:6px 12px;font-weight:800;color:var(--muted);cursor:pointer;border-radius:8px}
 .lgtabs button[aria-selected=true]{background:var(--accent2);color:var(--accent2-ink)}
-.mopts{display:flex;gap:10px;flex-wrap:wrap}
-.mopt{flex:1 1 220px;display:flex;align-items:stretch;gap:6px}
-.mbtn{flex:1;padding:12px 14px;border:2px solid var(--line);background:var(--surface2);border-radius:8px;text-align:left;font-weight:800;cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
-.mbtn small{display:block;font-weight:600;opacity:.8}
+.mopts{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:8px}
+.mopt{display:flex;align-items:center;gap:6px}
+.mbtn{flex:1;padding:9px 12px;border:2px solid var(--line);background:var(--surface2);border-radius:8px;text-align:left;font-weight:800;cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
+.mbtn .muted{font-weight:600;margin-left:4px}
 .mbtn[aria-pressed="true"]{border-color:var(--accent2);background:var(--accent2);color:var(--accent2-ink)}
-.ibtn{flex:none;align-self:center;width:30px;height:30px;border-radius:50%;border:2px solid var(--line2);background:var(--surface);color:var(--accent2);font:italic 800 1rem var(--latin);cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
-.ibtn[aria-expanded="true"]{background:var(--accent2);color:var(--accent2-ink);border-color:var(--accent2)}
+.mbtn[aria-pressed="true"] .muted{color:inherit;opacity:.75}
+.ibtn{flex:none;width:20px;height:20px;padding:0;border-radius:50%;border:1.5px solid var(--line2);background:transparent;color:var(--muted);font:italic 700 .72rem/1 var(--latin);cursor:pointer;display:grid;place-items:center}
+.ibtn:hover{color:var(--ink);border-color:var(--muted)}
+.ibtn[aria-expanded="true"]{background:var(--muted);color:var(--surface);border-color:var(--muted)}
 .infobox{margin-top:12px;padding:12px 16px;border:2px dashed var(--line2);border-radius:8px;background:var(--surface2);font-size:.95rem}
 .infobox h3{font-family:var(--display);font-weight:600;font-size:1.05rem;margin:0 0 6px}
 .infobox p{margin:0 0 8px}.infobox p:last-child{margin:0}
@@ -311,21 +313,9 @@ footer a{color:inherit}
 
   <div class="panel method">
     <h2>Scheduler</h2>
-    <p class="small muted" style="margin:-4px 0 10px">How Vocābula picks the next card. Your ratings are kept by both, so you can switch any time.</p>
-    <div class="mopts" id="methods">
-      <div class="mopt"><button type="button" class="mbtn" data-m="new">New<small>FSRS-6</small></button><button type="button" class="ibtn" data-i="new" aria-expanded="false" aria-controls="info-new" aria-label="About the New scheduler">i</button></div>
-      <div class="mopt"><button type="button" class="mbtn" data-m="legacy">Legacy<small>The original Vocābula</small></button><button type="button" class="ibtn" data-i="legacy" aria-expanded="false" aria-controls="info-legacy" aria-label="About the Legacy scheduler">i</button></div>
-    </div>
-    <div class="infobox" id="info-new" hidden>
-      <h3>New: FSRS-6</h3>
-      <p><b>What it does.</b> It uses FSRS-6, the Free Spaced Repetition Scheduler built into Anki, through <a href="https://github.com/open-spaced-repetition/ts-fsrs">ts-fsrs</a>, its maintained open-source code, exactly as it ships. For each word it estimates when you’ll forget it, and brings it back when your chance of remembering falls to 90%. A word you’re still learning, or just forgot, comes back after 1 or 10 minutes. Whenever nothing is due, you get a new word. Ratings of 1 and 2 count as forgotten, 3 as Hard, 4 as Good and 5 as Easy.</p>
-      <p><b>Why.</b> In the research behind this site, FSRS was the best open scheduler at predicting whether you’ll remember a card, on the largest open test (about 350 million Anki reviews). That test isn’t peer-reviewed and measures prediction rather than words learned, but nothing open does better.</p>
-    </div>
-    <div class="infobox" id="info-legacy" hidden>
-      <h3>Legacy: the original Vocābula</h3>
-      <p><b>What it does.</b> The scheduler from the first version, which works like Brainscape. It counts in cards, not days: a word you rate 1 comes back after about 3 cards, a 5 after about 50, and repeated 4s and 5s push it further out. Weak words that are due come first, and a new word arrives at least every fifth card.</p>
-      <p><b>Why you might pick it.</b> It brings in new words much faster and doesn’t care how many days pass, so it suits going through a whole list in one sitting. It doesn’t track forgetting over days the way FSRS does.</p>
-    </div>
+    <p class="small muted" style="margin:-4px 0 10px">How Vocābula picks the next card. Every rating is kept for all of them, so you can switch any time.</p>
+    <div class="mopts" id="methods"></div>
+    <div class="infobox" id="minfo" hidden></div>
   </div>
 </section>
 
@@ -401,7 +391,7 @@ footer a{color:inherit}
   </div>
 </section>
 
-<footer>Vocābula is part of <a href="../linguae/">Linguae</a> and uses the same account as Verba. Progress is saved in this browser, and to your account when you’re logged in. Accounts are stored with Google Firebase and <b>are not encrypted or private</b>; read <a href="https://github.com/janavduraikkannan/verba/blob/main/PRIVACY.md">the privacy statement</a> before making one. Scheduling uses FSRS-6 (through ts-fsrs, MIT) or the original Vocābula scheduler. Icons from game-icons.net (CC BY 3.0).</footer>
+<footer>Vocābula is part of <a href="../linguae/">Linguae</a> and uses the same account as Verba. Progress is saved in this browser, and to your account when you’re logged in. Accounts are stored with Google Firebase and <b>are not encrypted or private</b>; read <a href="https://github.com/janavduraikkannan/verba/blob/main/PRIVACY.md">the privacy statement</a> before making one. Schedulers: FSRS-6 (ts-fsrs, MIT), FSRS-7 (fsrs-rs), Ebisu (ebisu.js, public domain), LSTM and GRU (srs-benchmark weights), Duolingo’s Leitner and Pimsleur (halflife-regression, MIT), and SM-2, Anki SM-2, Leitner and Pimsleur from their published descriptions; each scheduler’s i button names its source. Icons from game-icons.net (CC BY 3.0).</footer>
 </main>
 
 <dialog class="acct" id="acct" aria-labelledby="acctTitle">
@@ -410,6 +400,9 @@ footer a{color:inherit}
 </dialog>
 
 <script src="vendor/ts-fsrs-5.4.2.umd.js"></script>
+<script src="vendor/ebisu-2.1.3.min.js"></script>
+<script src="vendor/srs-benchmark-weights.js"></script>
+<script src="schedulers.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>
 </body>

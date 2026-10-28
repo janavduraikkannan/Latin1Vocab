@@ -318,7 +318,7 @@ footer a{color:inherit}
     </div>
     <div class="infobox" id="info-new" hidden>
       <h3>New: FSRS-6</h3>
-      <p><b>What it does.</b> It uses FSRS-6, the Free Spaced Repetition Scheduler built into Anki, through <a href="https://github.com/open-spaced-repetition/ts-fsrs">ts-fsrs</a>, its maintained open-source code. For each word it estimates when you’ll forget it, and brings it back on the day your chance of remembering falls to 90%. Ratings of 1 and 2 count as forgotten. Within a session, a card you rate below 5 comes back after a few other cards, and a new word arrives only once every card in your cycle is at 5.</p>
+      <p><b>What it does.</b> It uses FSRS-6, the Free Spaced Repetition Scheduler built into Anki, through <a href="https://github.com/open-spaced-repetition/ts-fsrs">ts-fsrs</a>, its maintained open-source code, exactly as it ships. For each word it estimates when you’ll forget it, and brings it back when your chance of remembering falls to 90%. A word you’re still learning, or just forgot, comes back after 1 or 10 minutes. Whenever nothing is due, you get a new word. Ratings of 1 and 2 count as forgotten, 3 as Hard, 4 as Good and 5 as Easy.</p>
       <p><b>Why.</b> In the research behind this site, FSRS was the best open scheduler at predicting whether you’ll remember a card, on the largest open test (about 350 million Anki reviews). That test isn’t peer-reviewed and measures prediction rather than words learned, but nothing open does better.</p>
     </div>
     <div class="infobox" id="info-legacy" hidden>

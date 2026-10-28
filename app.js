@@ -159,7 +159,7 @@ function renderHome(){
   [].forEach.call(document.getElementsByName("len"),function(r){r.checked=r.value===cfg.len;});
   $("count").value=cfg.count;$("warn").hidden=true;
   [].forEach.call(document.querySelectorAll(".mbtn"),function(b){b.setAttribute("aria-pressed",b.dataset.m===cfg.method);});
-  $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring a new word only once you’ve got all the others to a 5.";
+  $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring each word back right when you’re about to forget it.";
   $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery.";
 }
 $("dirs").onclick=function(e){var b=e.target.closest("button");if(!b)return;cfg.dir=b.dataset.dir;saveLocal();renderHome();};
@@ -207,9 +207,7 @@ function renderSide(){
   var L=$("legend");L.textContent="";
   for(i=1;i<=5;i++){var li=document.createElement("li"),sw=document.createElement("i");sw.className="r"+i;li.appendChild(sw);li.appendChild(document.createTextNode(i+": "+n[i]));L.appendChild(li);}
   $("seenn").textContent=E.seenCount(sess)+" / "+sess.pool.length;
-  var cy=E.cycleSize(sess);
-  if(sess.method==="legacy"){$("cyclelbl").textContent="Legacy scheduler: a new word comes at least every fifth card.";return;}
-  $("cyclelbl").textContent=cy?cy+(cy===1?" card":" cards")+" in your cycle. A new word comes once "+(cy===1?"it’s":"they’re all")+" rated 5.":"Every card in your cycle is at 5, so the next word can be new.";
+  $("cyclelbl").textContent=sess.method==="legacy"?"Legacy scheduler: a new word comes at least every fifth card.":"FSRS-6: cards come back when they’re due, and new words come in whenever nothing is due.";
 }
 var MAC={a:"ā",e:"ē",i:"ī",o:"ō",u:"ū",y:"ȳ",A:"Ā",E:"Ē",I:"Ī",O:"Ō",U:"Ū",Y:"Ȳ"};
 var macronize=function(s){return s.replace(/([aeiouyAEIOUY])-/g,function(m,v){return MAC[v];});};
@@ -235,7 +233,7 @@ function finish(){
   $("sumline").textContent=dirName(cfg.dir)+" · "+cfg.sets.length+(cfg.sets.length===1?" set":" sets")+" ("+sess.pool.length+" words)";
   renderMastery();
   var left=sess.pool.length-seenIn(sess.pool);
-  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":"They come in one at a time, each once your cycle is all 5s.")
+  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":"New words come in whenever nothing is due.")
     :"Every word in these sets has been introduced. Repeating brings back whatever is due, weakest first.";
   show("summary");$("repeat").focus();
 }

@@ -2,17 +2,12 @@
    Runs in the browser and in Node (for tests), so it touches no page elements.
 
    Two schedulers, chosen on the home page. Every rating updates both, so switching loses nothing.
-   New: FSRS-6 (Free Spaced Repetition Scheduler) through ts-fsrs, the scheduler the Storm research picked: the best
-   open scheduler at predicting recall on the largest open benchmark. Each card keeps a stability S (days until
-   recall drops to 90%), a difficulty D (1 to 10), the time of the last review and the last 1-5 rating.
+   New: FSRS-6 (Free Spaced Repetition Scheduler) through ts-fsrs, unmodified, the scheduler the Storm research picked:
+   the best open scheduler at predicting recall on the largest open benchmark.
    Legacy: the first version's confidence-based repetition (see below).
 
-   Session rules for New (see the "Vocābula: Card scheduling research" doc):
-   1. Cards rated below 5 stay in the cycle and come back after a few other cards (like Anki's learning steps,
-      counted in cards because each card takes seconds).
-   2. A new word comes in only once every card in the cycle has been rated 5.
-   3. Cards due for review come before new words; when nothing is due, words not yet shown this session come
-      before repeats, weakest first, so the whole selection gets cycled. */
+   New shows whatever FSRS-6 says is due, earliest first, and a new word whenever nothing is due. It adds no rules
+   of its own on top of ts-fsrs. */
 var SETS = [
  {id:"1d", quiz:1, side:"door", cards:[
   ["annus -ī m.","year"],
@@ -147,23 +142,33 @@ var ALL = [];
 SETS.forEach(function(s){ s.cards = s.cards.map(function(c,i){
   var o={id:s.id+"-"+i,la:c[0],en:c[1],note:c[2]||"",set:s}; ALL.push(o); return o; }); });
 
-/* ---------- "New" scheduler: FSRS-6 through ts-fsrs ----------
-   ts-fsrs (vendor/ts-fsrs-5.4.2.umd.js, MIT, open-spaced-repetition) is the maintained implementation, used here
-   instead of hand-ported formulas. Default FSRS-6 weights, 90% desired retention. Elapsed time is passed in whole
-   days, as Anki does, so reviews on the same day use FSRS-6's same-day formula. */
+/* ---------- "New" scheduler: FSRS-6 through ts-fsrs, unmodified ----------
+   ts-fsrs (vendor/ts-fsrs-5.4.2.umd.js, MIT, open-spaced-repetition) is the maintained implementation of FSRS-6.
+   It is used exactly as shipped: fsrs() with its default settings (default FSRS-6 weights, 90% desired retention,
+   learning steps 1 min and 10 min, relearning step 10 min, short-term scheduling on, no fuzz, 100-year maximum),
+   and every rating goes through its next(). Each card stores the ts-fsrs card it returns. */
 var TS=(typeof FSRS!=="undefined")?FSRS:require("./vendor/ts-fsrs-5.4.2.umd.js");
-var FSRS6=TS.fsrs({request_retention:0.9});
+var FSRS6=TS.fsrs();
 var W=TS.default_w, DAY=864e5;
-/* 1 "not at all" and 2 "barely" count as forgotten (Again); 3 Hard; 4 Good; 5 Easy */
+/* The only bridge Vocābula adds: its 1-5 buttons map onto FSRS's four grades.
+   1 "not at all" and 2 "barely" = Again; 3 = Hard; 4 = Good; 5 = Easy. */
 var GRADE=[0,1,1,2,3,4];
-function retr(days,S){ return TS.forgetting_curve(W,Math.max(0,days),S); }
-function review(c,rating,now){
-  var G=GRADE[rating];
-  var st=c?FSRS6.next_state({stability:c.s,difficulty:c.d},Math.floor(Math.max(0,now-c.t)/DAY),G):FSRS6.next_state(null,0,G);
-  return {s:+st.stability.toFixed(4), d:+st.difficulty.toFixed(4), t:now, r:rating, n:(c?c.n:0)+1, l:(c?c.l:0)+(G===1?1:0)};
+function toTs(c){ // a saved record as a ts-fsrs card; records saved by the old FSRS-5 version become Review cards
+  if(c.st!==undefined) return {due:new Date(c.due),stability:c.s,difficulty:c.d,elapsed_days:c.el||0,scheduled_days:c.sd||0,
+    reps:c.n,lapses:c.l||0,learning_steps:c.ls||0,state:c.st,last_review:c.t?new Date(c.t):undefined};
+  var sd=Math.max(1,Math.round(c.s));
+  return {due:new Date(c.t+sd*DAY),stability:c.s,difficulty:c.d,elapsed_days:0,scheduled_days:sd,reps:c.n,lapses:c.l||0,
+    learning_steps:0,state:TS.State.Review,last_review:new Date(c.t)};
 }
-function recall(c,now){ return c ? retr((now-c.t)/DAY,c.s) : 0; }
-var isDue=function(c,now){ return !!c && (now-c.t)/DAY >= c.s; }; // recall has fallen to 90% or below
+function review(c,rating,now){
+  var card=c?toTs(c):TS.createEmptyCard(new Date(now));
+  var k=FSRS6.next(card,new Date(now),GRADE[rating]).card;
+  return {s:k.stability,d:k.difficulty,due:k.due.getTime(),el:k.elapsed_days,sd:k.scheduled_days,n:k.reps,l:k.lapses,
+    ls:k.learning_steps,st:k.state,t:now,r:rating};
+}
+function dueAt(c){ return c.st!==undefined ? c.due : c.t+Math.max(1,Math.round(c.s))*DAY; }
+var isDue=function(c,now){ return !!c && dueAt(c)<=now; };
+function recall(c,now){ return c ? FSRS6.get_retrievability(toTs(c),new Date(now),false) : 0; }
 
 /* ---------- "Legacy" scheduler: Vocābula's first version ----------
    Brainscape-style confidence-based repetition, counted in cards answered. After a rating a card is hidden for about
@@ -207,45 +212,24 @@ function pickLegacy(sess,cards,lg){
 }
 
 /* ---------- the session ---------- */
-var STEP=[0,3,4,6,8]; // cards until a card rated 1-4 comes back
 function newSession(pool,target,method){
-  return {pool:pool,target:target||0,method:method==="legacy"?"legacy":"new",done:0,learn:{},shown:{},last:null,newSeen:0,
+  return {pool:pool,target:target||0,method:method==="legacy"?"legacy":"new",done:0,shown:{},last:null,newSeen:0,
     ratings:[0,0,0,0,0,0],latest:{},sinceNew:0,lastWasNew:false};
 }
-function cycleSize(sess){ return Object.keys(sess.learn).length; }
 function pick(sess,cards,now,lg){
   if(sess.method==="legacy") return pickLegacy(sess,cards,lg);
   var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
-  var inLearn=function(c){return c.id in sess.learn;};
-  var learn=cand.filter(inLearn);
-  var byAt=function(a,b){return sess.learn[a.id]-sess.learn[b.id];};
-  var weakest=function(list){ // not shown this session first, then lowest recall now, then lowest last rating
-    return list.slice().sort(function(a,b){
-      var sa=sess.shown[a.id]?1:0, sb=sess.shown[b.id]?1:0; if(sa!==sb) return sa-sb;
-      var ra=recall(cards[a.id],now), rb=recall(cards[b.id],now); if(Math.abs(ra-rb)>1e-9) return ra-rb;
-      return cards[a.id].r-cards[b.id].r || Math.random()-.5;
-    })[0];
-  };
-  // 1. a card in the cycle whose turn has come
-  var ready=learn.filter(function(c){return sess.learn[c.id]<=sess.done;}).sort(byAt);
-  if(ready.length) return {card:ready[0],kind:"cycle"};
-  // 2. cards due for review (from earlier days)
-  var seen=cand.filter(function(c){return cards[c.id]&&!inLearn(c);});
-  var due=seen.filter(function(c){return isDue(cards[c.id],now);});
-  if(due.length) return {card:weakest(due),kind:"due"};
-  // 3. a new word, only when every card in the cycle has been rated 5
-  if(!cycleSize(sess)){
-    var fresh=cand.filter(function(c){return !cards[c.id];});
-    if(fresh.length) return {card:fresh[Math.floor(Math.random()*fresh.length)],kind:"new"};
-  }
-  // 4. the cycle card whose turn comes soonest
-  if(learn.length) return {card:learn.sort(byAt)[0],kind:"cycle"};
-  // 5. nothing due: words not yet shown this session, weakest first
-  if(seen.length) return {card:weakest(seen),kind:"extra"};
-  // 6. only the card just shown is left, so it comes again
-  var lastCard=pool.filter(function(c){return c.id===sess.last;})[0];
-  if(lastCard) return {card:lastCard,kind:(lastCard.id in sess.learn)?"cycle":"extra"};
-  return {card:pool[0],kind:"new"};
+  var byDue=function(a,b){return dueAt(cards[a.id])-dueAt(cards[b.id]);};
+  var seen=cand.filter(function(c){return cards[c.id];});
+  // 1. whatever FSRS-6 says is due now, earliest first (this includes its 1- and 10-minute learning steps)
+  var due=seen.filter(function(c){return isDue(cards[c.id],now);}).sort(byDue);
+  if(due.length) return {card:due[0],kind:"due"};
+  // 2. nothing is due: a new word
+  var fresh=cand.filter(function(c){return !cards[c.id];});
+  if(fresh.length) return {card:fresh[Math.floor(Math.random()*fresh.length)],kind:"new"};
+  // 3. no new words left: the card FSRS-6 will want next, shown a little early
+  if(seen.length) return {card:seen.sort(byDue)[0],kind:"early"};
+  return {card:pool[0],kind:cards[pool[0].id]?"early":"new"};
 }
 /* Record a rating in the session and return the card's new memory record. */
 function rate(sess,cards,card,rating,now,kind,lg){
@@ -253,7 +237,6 @@ function rate(sess,cards,card,rating,now,kind,lg){
   var rec=review(cards[card.id],rating,now); cards[card.id]=rec;
   sess.done++; sess.ratings[rating]++; sess.latest[card.id]=rating; sess.shown[card.id]=1; sess.last=card.id;
   if(kind==="new"){ sess.newSeen++; sess.sinceNew=0; sess.lastWasNew=true; } else { sess.sinceNew++; sess.lastWasNew=false; }
-  if(sess.method==="new"){ if(rating<5) sess.learn[card.id]=sess.done+STEP[rating]; else delete sess.learn[card.id]; }
   return rec;
 }
 function seenCount(sess){ return sess.pool.filter(function(c){return sess.shown[c.id];}).length; }
@@ -276,6 +259,6 @@ function mergeProgress(a,b){
   return out;
 }
 
-var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,GRADE:GRADE,retr:retr,review:review,recall:recall,isDue:isDue,
-  newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,cycleSize:cycleSize,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
+var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,GRADE:GRADE,review:review,recall:recall,isDue:isDue,
+  newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
 if(typeof module!=="undefined") module.exports=VOCAB_ENGINE; else window.E=VOCAB_ENGINE;

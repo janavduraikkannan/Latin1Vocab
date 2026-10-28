@@ -1,12 +1,13 @@
-/* Vocābula engine: the word lists, the FSRS-5 memory model and the card picker.
+/* Vocābula engine: the word lists, the two schedulers (New: FSRS-6, Legacy: the first version) and the card picker.
    Runs in the browser and in Node (for tests), so it touches no page elements.
 
-   Memory model: FSRS-5 (Free Spaced Repetition Scheduler), the algorithm Anki ships, with its published default
-   weights. Each card keeps a stability S (days until recall drops to 90%), a difficulty D (1 to 10), the time of the
-   last review and the last 1-5 confidence rating. Sources: Borretti, "Implementing FSRS in 100 Lines" (2025);
-   py-fsrs; the FSRS4Anki wiki.
+   Two schedulers, chosen on the home page. Every rating updates both, so switching loses nothing.
+   New: FSRS-6 (Free Spaced Repetition Scheduler) through ts-fsrs, the scheduler the Storm research picked: the best
+   open scheduler at predicting recall on the largest open benchmark. Each card keeps a stability S (days until
+   recall drops to 90%), a difficulty D (1 to 10), the time of the last review and the last 1-5 rating.
+   Legacy: the first version's confidence-based repetition (see below).
 
-   Session rules (see the "Vocābula: Card scheduling research" doc):
+   Session rules for New (see the "Vocābula: Card scheduling research" doc):
    1. Cards rated below 5 stay in the cycle and come back after a few other cards (like Anki's learning steps,
       counted in cards because each card takes seconds).
    2. A new word comes in only once every card in the cycle has been rated 5.
@@ -146,44 +147,74 @@ var ALL = [];
 SETS.forEach(function(s){ s.cards = s.cards.map(function(c,i){
   var o={id:s.id+"-"+i,la:c[0],en:c[1],note:c[2]||"",set:s}; ALL.push(o); return o; }); });
 
-/* ---------- FSRS-5 ---------- */
-var W=[0.40255,1.18385,3.173,15.69105,7.1949,0.5345,1.4604,0.0046,1.54575,0.1192,1.01925,1.9395,0.11,0.29605,2.2698,0.2315,2.9898,0.51655,0.6621];
-var FACTOR=19/81, DECAY=-0.5, DAY=864e5;
-var clampD=function(d){return Math.min(10,Math.max(1,d));};
-var clampS=function(s){return Math.min(36500,Math.max(0.01,s));};
+/* ---------- "New" scheduler: FSRS-6 through ts-fsrs ----------
+   ts-fsrs (vendor/ts-fsrs-5.4.2.umd.js, MIT, open-spaced-repetition) is the maintained implementation, used here
+   instead of hand-ported formulas. Default FSRS-6 weights, 90% desired retention. Elapsed time is passed in whole
+   days, as Anki does, so reviews on the same day use FSRS-6's same-day formula. */
+var TS=(typeof FSRS!=="undefined")?FSRS:require("./vendor/ts-fsrs-5.4.2.umd.js");
+var FSRS6=TS.fsrs({request_retention:0.9});
+var W=TS.default_w, DAY=864e5;
 /* 1 "not at all" and 2 "barely" count as forgotten (Again); 3 Hard; 4 Good; 5 Easy */
 var GRADE=[0,1,1,2,3,4];
-function retr(days,S){ return Math.pow(1+FACTOR*Math.max(0,days)/S,DECAY); }
-function d0(G){ return clampD(W[4]-Math.exp(W[5]*(G-1))+1); }
-function nextD(D,G){ var dp=D+(-W[6]*(G-3))*((10-D)/9); return clampD(W[7]*d0(4)+(1-W[7])*dp); }
-function sSuccess(D,S,R,G){
-  var h=G===2?W[15]:1, b=G===4?W[16]:1;
-  return S*(1+(11-D)*Math.pow(S,-W[9])*(Math.exp(W[10]*(1-R))-1)*h*b*Math.exp(W[8]));
-}
-function sFail(D,S,R){ return Math.min(S, W[11]*Math.pow(D,-W[12])*(Math.pow(S+1,W[13])-1)*Math.exp(W[14]*(1-R))); }
-function sSameDay(S,G){ return S*Math.exp(W[17]*(G-3+W[18])); }
-/* Apply a 1-5 rating to a card record (undefined for a card never seen). Returns the new record. */
+function retr(days,S){ return TS.forgetting_curve(W,Math.max(0,days),S); }
 function review(c,rating,now){
-  var G=GRADE[rating], S, D;
-  if(!c){ S=W[G-1]; D=d0(G); }
-  else{
-    var days=(now-c.t)/DAY;
-    if(days<1) S=sSameDay(c.s,G);
-    else{ var R=retr(days,c.s); S= G===1 ? sFail(c.d,c.s,R) : sSuccess(c.d,c.s,R,G); }
-    D=nextD(c.d,G);
-  }
-  return {s:+clampS(S).toFixed(4), d:+D.toFixed(4), t:now, r:rating, n:(c?c.n:0)+1, l:(c?c.l:0)+(G===1?1:0)};
+  var G=GRADE[rating];
+  var st=c?FSRS6.next_state({stability:c.s,difficulty:c.d},Math.floor(Math.max(0,now-c.t)/DAY),G):FSRS6.next_state(null,0,G);
+  return {s:+st.stability.toFixed(4), d:+st.difficulty.toFixed(4), t:now, r:rating, n:(c?c.n:0)+1, l:(c?c.l:0)+(G===1?1:0)};
 }
 function recall(c,now){ return c ? retr((now-c.t)/DAY,c.s) : 0; }
 var isDue=function(c,now){ return !!c && (now-c.t)/DAY >= c.s; }; // recall has fallen to 90% or below
 
+/* ---------- "Legacy" scheduler: Vocābula's first version ----------
+   Brainscape-style confidence-based repetition, counted in cards answered. After a rating a card is hidden for about
+   GAP[rating] cards (a 1 returns after about 3 cards, a 5 after about 50), and repeated 4s and 5s stretch the gap.
+   Weak cards that are due come first, new and due cards alternate, and a new card comes at least every fifth card. */
+var GAP=[0,3,6,12,25,50];
+function lgRec(lg,cards,id){ // a card first seen with the new scheduler counts as seen and due now
+  if(!lg.cards[id]&&cards[id]) lg.cards[id]={n:cards[id].n,r:cards[id].r,streak:0,due:lg.step,t:cards[id].t};
+  return lg.cards[id];
+}
+function lgSchedule(lg,cards,id,r,now){
+  lg.step++;
+  var c=lgRec(lg,cards,id)||{n:0,streak:0};
+  c.n++; c.r=r; c.t=now; c.streak = r>=4 ? (c.streak||0)+1 : 0;
+  var gap=GAP[r]*(r>=4?Math.pow(1.6,c.streak-1):1)*(0.85+Math.random()*0.3);
+  c.due=lg.step+Math.max(2,Math.min(400,Math.round(gap)));
+  lg.cards[id]=c;
+}
+function rnd(a){ return a[Math.floor(Math.random()*a.length)]; }
+function mostOverdue(a,lg){
+  var best=null;
+  a.forEach(function(c){ var d=lg.cards[c.id]; var k=d.due+d.r*0.01+Math.random()*0.005; if(!best||k<best.k) best={c:c,k:k}; });
+  return best.c;
+}
+function pickLegacy(sess,cards,lg){
+  var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
+  cand.forEach(function(c){lgRec(lg,cards,c.id);});
+  var fresh=cand.filter(function(c){return !lg.cards[c.id];});
+  var seen=cand.filter(function(c){return lg.cards[c.id];});
+  var due=seen.filter(function(c){return lg.cards[c.id].due<=lg.step;});
+  var weak=due.filter(function(c){return lg.cards[c.id].r<=2;});
+  var card,isNew=false;
+  if(fresh.length&&sess.sinceNew>=4){ card=rnd(fresh); isNew=true; }      // never let weak cards block new ones
+  else if(weak.length) card=mostOverdue(weak,lg);                          // weak and due comes first
+  else if(fresh.length&&due.length){                                      // alternate new and due
+    if(sess.lastWasNew) card=mostOverdue(due,lg); else { card=rnd(fresh); isNew=true; } }
+  else if(fresh.length){ card=rnd(fresh); isNew=true; }
+  else if(due.length) card=mostOverdue(due,lg);
+  else card=mostOverdue(seen,lg);                                          // nothing due: soonest due, lowest confidence
+  return {card:card,kind:isNew?"new":"due"};
+}
+
 /* ---------- the session ---------- */
 var STEP=[0,3,4,6,8]; // cards until a card rated 1-4 comes back
-function newSession(pool,target){
-  return {pool:pool,target:target||0,done:0,learn:{},shown:{},last:null,newSeen:0,ratings:[0,0,0,0,0,0],latest:{}};
+function newSession(pool,target,method){
+  return {pool:pool,target:target||0,method:method==="legacy"?"legacy":"new",done:0,learn:{},shown:{},last:null,newSeen:0,
+    ratings:[0,0,0,0,0,0],latest:{},sinceNew:0,lastWasNew:false};
 }
 function cycleSize(sess){ return Object.keys(sess.learn).length; }
-function pick(sess,cards,now){
+function pick(sess,cards,now,lg){
+  if(sess.method==="legacy") return pickLegacy(sess,cards,lg);
   var pool=sess.pool, cand=pool.length>1?pool.filter(function(c){return c.id!==sess.last;}):pool;
   var inLearn=function(c){return c.id in sess.learn;};
   var learn=cand.filter(inLearn);
@@ -217,29 +248,34 @@ function pick(sess,cards,now){
   return {card:pool[0],kind:"new"};
 }
 /* Record a rating in the session and return the card's new memory record. */
-function rate(sess,cards,card,rating,now,kind){
+function rate(sess,cards,card,rating,now,kind,lg){
+  if(lg) lgSchedule(lg,cards,card.id,rating,now); // legacy record first: it reads the card's state before this rating
   var rec=review(cards[card.id],rating,now); cards[card.id]=rec;
   sess.done++; sess.ratings[rating]++; sess.latest[card.id]=rating; sess.shown[card.id]=1; sess.last=card.id;
-  if(kind==="new") sess.newSeen++;
-  if(rating<5) sess.learn[card.id]=sess.done+STEP[rating]; else delete sess.learn[card.id];
+  if(kind==="new"){ sess.newSeen++; sess.sinceNew=0; sess.lastWasNew=true; } else { sess.sinceNew++; sess.lastWasNew=false; }
+  if(sess.method==="new"){ if(rating<5) sess.learn[card.id]=sess.done+STEP[rating]; else delete sess.learn[card.id]; }
   return rec;
 }
 function seenCount(sess){ return sess.pool.filter(function(c){return sess.shown[c.id];}).length; }
 
 /* ---------- saving and merging progress ---------- */
-function blankProgress(){ return {v:1,el:{},le:{},reset:{el:0,le:0}}; }
+function blankProgress(){ return {v:1,el:{},le:{},reset:{el:0,le:0},lg:{el:{step:0,cards:{}},le:{step:0,cards:{}}}}; }
 /* Merge two progress records card by card: the later review wins; a reset wipes everything reviewed before it. */
 function mergeProgress(a,b){
   a=a||blankProgress(); b=b||blankProgress();
-  var out={v:1,el:{},le:{},reset:{}};
+  var out={v:1,el:{},le:{},reset:{},lg:{}};
   ["el","le"].forEach(function(dir){
     var rs=Math.max((a.reset||{})[dir]||0,(b.reset||{})[dir]||0); out.reset[dir]=rs;
     [a[dir]||{},b[dir]||{}].forEach(function(m){ Object.keys(m).forEach(function(id){
       var c=m[id]; if(!c||c.t<rs) return; if(!out[dir][id]||c.t>out[dir][id].t) out[dir][id]=c; }); });
+    var la=(a.lg||{})[dir]||{}, lb=(b.lg||{})[dir]||{}, lo={step:Math.max(la.step||0,lb.step||0),cards:{}};
+    [la.cards||{},lb.cards||{}].forEach(function(m){ Object.keys(m).forEach(function(id){
+      var c=m[id]; if(!c||(c.t||0)<rs) return; if(!lo.cards[id]||(c.t||0)>(lo.cards[id].t||0)) lo.cards[id]=c; }); });
+    out.lg[dir]=lo;
   });
   return out;
 }
 
-var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GRADE:GRADE,retr:retr,review:review,recall:recall,isDue:isDue,
+var VOCAB_ENGINE={SETS:SETS,ALL:ALL,W:W,GAP:GAP,pickLegacy:pickLegacy,GRADE:GRADE,retr:retr,review:review,recall:recall,isDue:isDue,
   newSession:newSession,pick:pick,rate:rate,seenCount:seenCount,cycleSize:cycleSize,blankProgress:blankProgress,mergeProgress:mergeProgress,DAY:DAY};
 if(typeof module!=="undefined") module.exports=VOCAB_ENGINE; else window.E=VOCAB_ENGINE;

@@ -19,12 +19,14 @@ var dirName=function(d){return d==="el"?"English to Latin":"Latin to English";};
 
 /* ---------- saved state (this browser) ---------- */
 var PKEY="vocabula.progress", CKEY="vocabula.settings";
-var prog=E.blankProgress(), cfg={dir:"el",sets:[],len:"endless",count:10};
+var prog=E.blankProgress(), cfg={dir:"el",sets:[],len:"endless",count:10,method:"new"};
 try{var p0=JSON.parse(localStorage.getItem(PKEY)||"null");if(p0)prog=E.mergeProgress(p0,null);}catch(e){}
-try{var c0=JSON.parse(localStorage.getItem(CKEY)||"null");if(c0)["dir","sets","len","count"].forEach(function(k){if(c0[k]!=null)cfg[k]=c0[k];});}catch(e){}
+try{var c0=JSON.parse(localStorage.getItem(CKEY)||"null");if(c0)["dir","sets","len","count","method"].forEach(function(k){if(c0[k]!=null)cfg[k]=c0[k];});}catch(e){}
+if(cfg.method!=="legacy")cfg.method="new";
 cfg.sets=cfg.sets.filter(function(id){return E.SETS.some(function(s){return s.id===id;});});
 function saveLocal(){try{localStorage.setItem(PKEY,JSON.stringify(prog));localStorage.setItem(CKEY,JSON.stringify(cfg));}catch(e){}}
 function cards(){return prog[cfg.dir];}
+function legacy(){return prog.lg[cfg.dir];}
 function pool(){return E.ALL.filter(function(c){return cfg.sets.indexOf(c.set.id)>=0;});}
 function seenIn(list){var m=cards();return list.filter(function(c){return m[c.id];}).length;}
 function mastery(list){var m=cards(),t=0;list.forEach(function(c){if(m[c.id])t+=m[c.id].r;});return list.length?Math.round(100*t/(5*list.length)):0;}
@@ -156,6 +158,8 @@ function renderHome(){
   });
   [].forEach.call(document.getElementsByName("len"),function(r){r.checked=r.value===cfg.len;});
   $("count").value=cfg.count;$("warn").hidden=true;
+  [].forEach.call(document.querySelectorAll(".mbtn"),function(b){b.setAttribute("aria-pressed",b.dataset.m===cfg.method);});
+  $("bubbleRule").textContent=cfg.method==="legacy"?"New words come in every few cards.":"I bring a new word only once you’ve got all the others to a 5.";
   $("overall").textContent=dirName(cfg.dir)+": "+seenIn(E.ALL)+" of "+E.ALL.length+" words seen, "+mastery(E.ALL)+"% overall mastery.";
 }
 $("dirs").onclick=function(e){var b=e.target.closest("button");if(!b)return;cfg.dir=b.dataset.dir;saveLocal();renderHome();};
@@ -166,16 +170,23 @@ $("count").onfocus=function(){cfg.len="count";saveLocal();document.getElementsBy
 $("count").oninput=function(){var n=parseInt($("count").value,10);if(n>0){cfg.count=Math.min(999,n);saveLocal();}};
 $("reset").onclick=function(){
   if(!confirm("Erase all your ratings for "+dirName(cfg.dir)+"? This also erases them from your account."))return;
-  prog[cfg.dir]={};prog.reset[cfg.dir]=Date.now();saveLocal();syncSoon();renderHome();
+  prog[cfg.dir]={};prog.lg[cfg.dir]={step:0,cards:{}};prog.reset[cfg.dir]=Date.now();saveLocal();syncSoon();renderHome();
+};
+$("methods").onclick=function(e){
+  var m=e.target.closest(".mbtn"),i=e.target.closest(".ibtn");
+  if(m){cfg.method=m.dataset.m;saveLocal();renderHome();}
+  if(i){var box=$("info-"+i.dataset.i),open=box.hidden;
+    ["new","legacy"].forEach(function(k){$("info-"+k).hidden=true;document.querySelector('.ibtn[data-i="'+k+'"]').setAttribute("aria-expanded","false");});
+    box.hidden=!open;i.setAttribute("aria-expanded",open);}
 };
 $("start").onclick=function(){if(!cfg.sets.length){$("warn").hidden=false;return;}startSession();};
 
 /* ---------- study ---------- */
 var sess=null,cur=null,revealed=false;
-function startSession(){sess=E.newSession(pool(),cfg.len==="count"?Math.max(1,cfg.count|0):0);show("study");next();}
+function startSession(){sess=E.newSession(pool(),cfg.len==="count"?Math.max(1,cfg.count|0):0,cfg.method);show("study");next();}
 function next(){
   if(sess.target&&sess.done>=sess.target){finish();return;}
-  cur=E.pick(sess,cards(),Date.now());revealed=false;
+  cur=E.pick(sess,cards(),Date.now(),legacy());revealed=false;
   var c=cur.card,toLatin=cfg.dir==="el";
   $("card").className="card "+c.set.side;
   $("tag").innerHTML="Set "+c.set.quiz+", "+cap(c.set.side)+(cur.kind==="new"?'<span class="new">· new word</span>':"");
@@ -197,6 +208,7 @@ function renderSide(){
   for(i=1;i<=5;i++){var li=document.createElement("li"),sw=document.createElement("i");sw.className="r"+i;li.appendChild(sw);li.appendChild(document.createTextNode(i+": "+n[i]));L.appendChild(li);}
   $("seenn").textContent=E.seenCount(sess)+" / "+sess.pool.length;
   var cy=E.cycleSize(sess);
+  if(sess.method==="legacy"){$("cyclelbl").textContent="Legacy scheduler: a new word comes at least every fifth card.";return;}
   $("cyclelbl").textContent=cy?cy+(cy===1?" card":" cards")+" in your cycle. A new word comes once "+(cy===1?"it’s":"they’re all")+" rated 5.":"Every card in your cycle is at 5, so the next word can be new.";
 }
 var MAC={a:"ā",e:"ē",i:"ī",o:"ō",u:"ū",y:"ȳ",A:"Ā",E:"Ē",I:"Ī",O:"Ō",U:"Ū",Y:"Ȳ"};
@@ -211,7 +223,7 @@ function reveal(){
 }
 function rateNow(r){
   if(!revealed)return;
-  E.rate(sess,cards(),cur.card,r,Date.now(),cur.kind);saveLocal();syncSoon();next();
+  E.rate(sess,cards(),cur.card,r,Date.now(),cur.kind,legacy());saveLocal();syncSoon();next();
 }
 function finish(){
   if(!sess.done){show("home");renderHome();return;}
@@ -223,7 +235,7 @@ function finish(){
   $("sumline").textContent=dirName(cfg.dir)+" · "+cfg.sets.length+(cfg.sets.length===1?" set":" sets")+" ("+sess.pool.length+" words)";
   renderMastery();
   var left=sess.pool.length-seenIn(sess.pool);
-  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. They come in one at a time, each once your cycle is all 5s."
+  $("sleft").textContent=left?left+" of "+sess.pool.length+" words in these sets haven’t been introduced yet. "+(sess.method==="legacy"?"The Legacy scheduler brings one in at least every fifth card.":"They come in one at a time, each once your cycle is all 5s.")
     :"Every word in these sets has been introduced. Repeating brings back whatever is due, weakest first.";
   show("summary");$("repeat").focus();
 }

@@ -227,6 +227,18 @@ dialog.acct .hint{color:var(--muted);font-size:.88rem;margin:6px 0 0}
 .lgtabs{display:inline-flex;gap:4px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:3px;margin:8px 0 4px}
 .lgtabs button{background:none;border:0;padding:6px 12px;font-weight:800;color:var(--muted);cursor:pointer;border-radius:8px}
 .lgtabs button[aria-selected=true]{background:var(--accent2);color:var(--accent2-ink)}
+.mopts{display:flex;gap:10px;flex-wrap:wrap}
+.mopt{flex:1 1 220px;display:flex;align-items:stretch;gap:6px}
+.mbtn{flex:1;padding:12px 14px;border:2px solid var(--line);background:var(--surface2);border-radius:8px;text-align:left;font-weight:800;cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
+.mbtn small{display:block;font-weight:600;opacity:.8}
+.mbtn[aria-pressed="true"]{border-color:var(--accent2);background:var(--accent2);color:var(--accent2-ink)}
+.ibtn{flex:none;align-self:center;width:30px;height:30px;border-radius:50%;border:2px solid var(--line2);background:var(--surface);color:var(--accent2);font:italic 800 1rem var(--latin);cursor:pointer;box-shadow:2px 2px 0 var(--line2)}
+.ibtn[aria-expanded="true"]{background:var(--accent2);color:var(--accent2-ink);border-color:var(--accent2)}
+.infobox{margin-top:12px;padding:12px 16px;border:2px dashed var(--line2);border-radius:8px;background:var(--surface2);font-size:.95rem}
+.infobox h3{font-family:var(--display);font-weight:600;font-size:1.05rem;margin:0 0 6px}
+.infobox p{margin:0 0 8px}.infobox p:last-child{margin:0}
+.infobox a{color:var(--accent2)}
+.method{margin-bottom:10px}
 footer{border-top:1px solid var(--line);margin-top:30px;padding:18px 0 30px;color:var(--muted);font-size:.85rem}
 footer a{color:inherit}
 </style>
@@ -259,7 +271,7 @@ footer a{color:inherit}
     <img src="img/felix/happy.svg" alt="Fēlix the cat">
     <div>
       <h1>Latin vocab, <em>one card at a time</em>.</h1>
-      <div class="bubble"><span class="lw" tabindex="0" data-en="hello!">Salvē</span>! Type the word, see the answer, and tell me how well you knew it. I bring a new word only once you’ve got all the others to a 5.</div>
+      <div class="bubble"><span class="lw" tabindex="0" data-en="hello!">Salvē</span>! Type the word, see the answer, and tell me how well you knew it. <span id="bubbleRule"></span></div>
     </div>
   </div>
 
@@ -296,6 +308,25 @@ footer a{color:inherit}
   <p class="small muted" style="margin-top:22px" id="overall"></p>
   <p class="small muted">For Latin answers, type a hyphen after a vowel for a macron: <span lang="la">a-</span> becomes <span lang="la">ā</span>. <span id="savedwhere"></span></p>
   <button type="button" class="link small" id="reset">Reset progress for this direction</button>
+
+  <div class="panel method">
+    <h2>Scheduler</h2>
+    <p class="small muted" style="margin:-4px 0 10px">How Vocābula picks the next card. Your ratings are kept by both, so you can switch any time.</p>
+    <div class="mopts" id="methods">
+      <div class="mopt"><button type="button" class="mbtn" data-m="new">New<small>FSRS-6</small></button><button type="button" class="ibtn" data-i="new" aria-expanded="false" aria-controls="info-new" aria-label="About the New scheduler">i</button></div>
+      <div class="mopt"><button type="button" class="mbtn" data-m="legacy">Legacy<small>The original Vocābula</small></button><button type="button" class="ibtn" data-i="legacy" aria-expanded="false" aria-controls="info-legacy" aria-label="About the Legacy scheduler">i</button></div>
+    </div>
+    <div class="infobox" id="info-new" hidden>
+      <h3>New: FSRS-6</h3>
+      <p><b>What it does.</b> It uses FSRS-6, the Free Spaced Repetition Scheduler built into Anki, through <a href="https://github.com/open-spaced-repetition/ts-fsrs">ts-fsrs</a>, its maintained open-source code. For each word it estimates when you’ll forget it, and brings it back on the day your chance of remembering falls to 90%. Ratings of 1 and 2 count as forgotten. Within a session, a card you rate below 5 comes back after a few other cards, and a new word arrives only once every card in your cycle is at 5.</p>
+      <p><b>Why.</b> In the research behind this site, FSRS was the best open scheduler at predicting whether you’ll remember a card, on the largest open test (about 350 million Anki reviews). That test isn’t peer-reviewed and measures prediction rather than words learned, but nothing open does better.</p>
+    </div>
+    <div class="infobox" id="info-legacy" hidden>
+      <h3>Legacy: the original Vocābula</h3>
+      <p><b>What it does.</b> The scheduler from the first version, which works like Brainscape. It counts in cards, not days: a word you rate 1 comes back after about 3 cards, a 5 after about 50, and repeated 4s and 5s push it further out. Weak words that are due come first, and a new word arrives at least every fifth card.</p>
+      <p><b>Why you might pick it.</b> It brings in new words much faster and doesn’t care how many days pass, so it suits going through a whole list in one sitting. It doesn’t track forgetting over days the way FSRS does.</p>
+    </div>
+  </div>
 </section>
 
 <!-- STUDY -->
@@ -370,7 +401,7 @@ footer a{color:inherit}
   </div>
 </section>
 
-<footer>Vocābula is part of <a href="../linguae/">Linguae</a> and uses the same account as Verba. Progress is saved in this browser, and to your account when you’re logged in. Accounts are stored with Google Firebase and <b>are not encrypted or private</b>; read <a href="https://github.com/janavduraikkannan/verba/blob/main/PRIVACY.md">the privacy statement</a> before making one. Scheduling uses FSRS-5, the algorithm behind Anki. Icons from game-icons.net (CC BY 3.0).</footer>
+<footer>Vocābula is part of <a href="../linguae/">Linguae</a> and uses the same account as Verba. Progress is saved in this browser, and to your account when you’re logged in. Accounts are stored with Google Firebase and <b>are not encrypted or private</b>; read <a href="https://github.com/janavduraikkannan/verba/blob/main/PRIVACY.md">the privacy statement</a> before making one. Scheduling uses FSRS-6 (through ts-fsrs, MIT) or the original Vocābula scheduler. Icons from game-icons.net (CC BY 3.0).</footer>
 </main>
 
 <dialog class="acct" id="acct" aria-labelledby="acctTitle">
@@ -378,6 +409,7 @@ footer a{color:inherit}
   <div id="acctBody"></div>
 </dialog>
 
+<script src="vendor/ts-fsrs-5.4.2.umd.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>
 </body>

@@ -22,4 +22,4 @@ Live at https://janavduraikkannan.github.io/vocabula/
 - **Accounts.** The same account as Verba and the other Linguae sites (`verba-account` in the browser). Progress is saved in `vocab/{account key}` in Firestore project `verba-791ca`, never in the account document. No leaderboard.
 - **Firestore security rules** live only in [`firestore.rules` in the linguae repository](https://github.com/janavduraikkannan/linguae/blob/main/firestore.rules). After changing them there, publish them in the Firebase console.
 
-Files: `index.html` (page and styles), `app.js` (screens, saving, account), `engine.js` (word lists, Default and Legacy, queue and saving), `schedulers.js` (the other ten), `vendor/` (ts-fsrs, ebisu.js, srs-benchmark weights); both run in Node for tests. Fēlix art from Verba; icons from game-icons.net (CC BY 3.0).
+Files: `index.html` (the page), `css/vocabula.css` (styles), `app.js` (screens, saving, account), `engine.js` (word lists, Default and Legacy, queue and saving), `schedulers.js` (the other ten), `vendor/` (ts-fsrs, ebisu.js, srs-benchmark weights); both run in Node for tests. Fēlix art from Verba; icons from game-icons.net (CC BY 3.0).
